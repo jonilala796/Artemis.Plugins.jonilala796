@@ -1,4 +1,6 @@
 name: Build Plugins
+permissions: 
+  contents: read
 
 on:
   push:
@@ -28,7 +30,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Artemis.Plugins.Devices.Nanoleaf
-          path: Artemis.Plugins.Devices.Nanoleaf/bin/x64/Release/net10.0/publish
+          path: Artemis.Plugins.Devices.Nanoleaf/bin/x64/Release/net10.0/publish      
+            
+      - name: Upload DateTime Plugin Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Artemis.Plugins.Nodes.DateTime
+          path: Artemis.Plugins.Nodes.DateTime/bin/x64/Release/net10.0/publish
 
       - name: Install Plugin Uploader
         run: dotnet tool install ArtemisRGB.Tools.PluginUploader --global
@@ -36,3 +44,7 @@ jobs:
       - name: Upload Nanoleaf Plugin to Artemis Workshop
         if: github.ref == 'refs/heads/main'
         run: artemis-plugin-uploader upload-all --pat ${{ secrets.WORKSHOP_PAT }} --folder Artemis.Plugins.Devices.Nanoleaf/bin/x64/Release/net10.0
+
+      - name: Upload DateTime Plugin to Artemis Workshop
+        if: github.ref == 'refs/heads/main'
+        run: artemis-plugin-uploader upload-all --pat ${{ secrets.WORKSHOP_PAT }} --folder Artemis.Plugins.Nodes.DateTime/bin/x64/Release/net10.0
