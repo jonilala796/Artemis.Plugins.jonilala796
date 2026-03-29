@@ -1,19 +1,16 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
-using System.Net;
 using System.Reactive;
 using System.Threading.Tasks;
 using Artemis.Core;
 using Artemis.Core.Services;
 using Artemis.Plugins.Devices.Nanoleaf.Helper;
 using Artemis.Plugins.Devices.Nanoleaf.RGB.NET.API;
-using Artemis.Plugins.Devices.Nanoleaf.RGB.NET.Helper;
 using Artemis.Plugins.Devices.Nanoleaf.Settings;
 using Artemis.Plugins.Devices.Nanoleaf.ViewModels.Dialogs;
 using Artemis.UI.Shared;
 using Artemis.UI.Shared.Services;
-using DynamicData;
 using ReactiveUI;
 
 namespace Artemis.Plugins.Devices.Nanoleaf.ViewModels;
@@ -46,7 +43,7 @@ public class NanoleafConfigurationViewModel : PluginConfigurationViewModel
 
         _definitions = settings.GetSetting(nameof(DeviceDefinitions), new List<DeviceDefinition>());
 
-        DeviceDefinitions = new ObservableCollection<DeviceDefinition>(_definitions.Value);
+        DeviceDefinitions = new ObservableCollection<DeviceDefinition>(_definitions.Value ?? []);
 
         AddDevice = ReactiveCommand.CreateFromTask(ExecuteAddDevice);
         EditDevice = ReactiveCommand.CreateFromTask<DeviceDefinition>(ExecuteEditDevice);
@@ -79,7 +76,7 @@ public class NanoleafConfigurationViewModel : PluginConfigurationViewModel
         {
             PluginSetting<List<DeviceDefinition>> definitions =
                 _settings.GetSetting(nameof(DeviceDefinitions), new List<DeviceDefinition>());
-            var matchedDevice = definitions.Value.FirstOrDefault(d => d.Hostname == device.Hostname);
+            var matchedDevice = definitions.Value?.FirstOrDefault(d => d.Hostname == device.Hostname);
             if (matchedDevice != null)
             {
                 matchedDevice.AuthToken = authToken;
@@ -88,7 +85,7 @@ public class NanoleafConfigurationViewModel : PluginConfigurationViewModel
             {
                 // Fallback: update the token on the passed instance.
                 device.AuthToken = authToken;
-                definitions.Value.Add(device);
+                definitions.Value?.Add(device);
             }
             await _windowService.ShowConfirmContentDialog("Authentication successful",
                 "You have successfully authenticated with the device");
@@ -110,16 +107,12 @@ public class NanoleafConfigurationViewModel : PluginConfigurationViewModel
 
 
         //check if devices with the ip address already exist
-        foreach ((var ipAddress, string? model) in discoverDevices)
+        foreach ((var ipAddress, string model) in discoverDevices)
         {
-            if (_definitions.Value.Any(d => ipAddress.Equals(d.Hostname)))
+            if ((_definitions.Value ?? []).Any(d => ipAddress.Equals(d.Hostname)))
                 continue;
 
-
-            if (ipAddress == null)
-                continue;
-
-            _definitions.Value.Add(new DeviceDefinition
+            _definitions.Value?.Add(new DeviceDefinition
             {
                 Hostname = ipAddress,
                 Model = model,
@@ -143,7 +136,7 @@ public class NanoleafConfigurationViewModel : PluginConfigurationViewModel
             DeviceDialogResult.Save)
             return;
 
-        _definitions.Value.Add(device);
+        _definitions.Value?.Add(device);
         DeviceDefinitions.Add(device);
     }
 
@@ -170,7 +163,7 @@ public class NanoleafConfigurationViewModel : PluginConfigurationViewModel
 
     private void ExecuteRemoveDevice(DeviceDefinition device)
     {
-        _definitions.Value.Remove(device);
+        _definitions.Value?.Remove(device);
         DeviceDefinitions.Remove(device);
     }
 

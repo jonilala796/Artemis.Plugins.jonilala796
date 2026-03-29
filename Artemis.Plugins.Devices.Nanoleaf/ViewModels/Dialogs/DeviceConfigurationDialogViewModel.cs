@@ -59,6 +59,7 @@ public class
         IWindowService windowService)
     {
         _device = device;
+        Device = device;
         _settings = settings;
         _windowService = windowService;
 
@@ -111,7 +112,7 @@ public class
 
         PluginSetting<List<DeviceDefinition>> definitions =
             _settings.GetSetting("DeviceDefinitions", new List<DeviceDefinition>());
-        definitions.Value.Remove(_device);
+        definitions.Value?.Remove(_device);
         Close(DeviceDialogResult.Remove);
     }
 

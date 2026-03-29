@@ -13,15 +13,24 @@ public sealed class NanoleafRGBDevice : AbstractRGBDevice<NanoleafRGBDeviceInfo>
         IDeviceUpdateTrigger updateTrigger)
         : base(deviceInfo,
             new NanoleafDeviceUpdateQueue(updateTrigger, address, port, deviceInfo.Info.PanelLayout.Layout.NumPanels,
-                deviceInfo.Info.PanelLayout.Layout.PositionData[0].ShapeType.GetExtControlVersion(),
+                GetExtControlVersion(deviceInfo),
                 deviceInfo.LedIdToIndex))
     {
         InitializeLayout();
     }
 
+    private static ExtControlVersion? GetExtControlVersion(NanoleafRGBDeviceInfo deviceInfo)
+    {
+        var positionData = deviceInfo.Info.PanelLayout.Layout.PositionData;
+        return positionData.Count > 0 ? positionData[0].ShapeType.GetExtControlVersion() : null;
+    }
+
     private void InitializeLayout()
     {
         List<NanoleafInfo.PositionDataInfo> positionData = DeviceInfo.Info.PanelLayout.Layout.PositionData;
+        if (positionData.Count == 0)
+            return;
+
         int maxY = positionData.Max(p => p.Y);
         int i = 0;
         foreach (var position in positionData)
