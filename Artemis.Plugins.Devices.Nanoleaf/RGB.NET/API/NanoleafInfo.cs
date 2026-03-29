@@ -27,22 +27,22 @@ public class NanoleafInfo
     public string Model { get; set; } = "";
 
     [JsonPropertyName("discovery")]
-    public DiscoveryInfo? Discovery { get; set; } = new();
+    public DiscoveryInfo? Discovery { get; set; }
 
     [JsonPropertyName("effects")]
-    public EffectsInfo Effects { get; set; } = new();
+    public EffectsInfo? Effects { get; set; }
 
     [JsonPropertyName("firmwareUpgrade")]
-    public FirmwareUpgradeInfo FirmwareUpgrade { get; set; } = new();
+    public FirmwareUpgradeInfo? FirmwareUpgrade { get; set; }
 
     [JsonPropertyName("panelLayout")]
-    public PanelLayoutInfo PanelLayout { get; set; } = new();
+    public PanelLayoutInfo? PanelLayout { get; set; }
 
     [JsonPropertyName("state")]
     public StateInfo State { get; set; } = new();
 
     [JsonPropertyName("rhythm")]
-    public RhythmInfo? Rhythm { get; set; } = new();
+    public RhythmInfo? Rhythm { get; set; }
 
 
     public class DiscoveryInfo

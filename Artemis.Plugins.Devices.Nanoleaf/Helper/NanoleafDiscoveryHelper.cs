@@ -1,17 +1,20 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Threading.Tasks;
+using Zeroconf;
 
 namespace Artemis.Plugins.Devices.Nanoleaf.Helper
 {
     /// <summary>
-    /// Helper class for discovering Nanoleaf devices on the network using SSDP.
+    /// Helper class for discovering Nanoleaf devices on the network using SSDP and mDNS.
     /// </summary>
     public class NanoleafDiscoveryHelper
     {
         /// <summary>
-        /// Discovers Nanoleaf devices on the network.
+        /// Discovers panel-based Nanoleaf devices on the network using SSDP.
         /// </summary>
         /// <param name="waitFor">The time to wait for responses in milliseconds.</param>
         /// <returns>A list of tuples containing the address and model of the discovered devices.</returns>
@@ -42,7 +45,6 @@ namespace Artemis.Plugins.Devices.Nanoleaf.Helper
                     if (!ssdpResponse.Headers.TryGetValue("ST", out string? st) || !st.Contains("nanoleaf") ||
                         !ssdpResponse.Headers.TryGetValue("Location", out string? location)) continue;
                     string address = new Uri(location).Host;
-                    int port = new Uri(location).Port;
                     devices.Add((address, st.Split(':')[1].ToUpper()));
                 }
                 catch (SocketException)
@@ -52,6 +54,81 @@ namespace Artemis.Plugins.Devices.Nanoleaf.Helper
             }
 
             return devices;
+        }
+
+        /// <summary>
+        /// Discovers Nanoleaf Matter WiFi Essentials devices on the network using mDNS.
+        /// </summary>
+        /// <param name="scanTimeSeconds">How long to scan for devices in seconds.</param>
+        /// <returns>A list of tuples containing the address and model of the discovered devices.</returns>
+        public static List<(string address, string model)> DiscoverMatterDevices(int scanTimeSeconds = 5)
+        {
+            try
+            {
+                return Task.Run(async () =>
+                {
+                    var results = await ZeroconfResolver.ResolveAsync("_nanoleafapi._tcp.local.",
+                        scanTime: TimeSpan.FromSeconds(scanTimeSeconds));
+
+                    return results
+                        .Select(host => (address: host.IPAddress, model: ExtractModelFromMdns(host)))
+                        .Where(d => !string.IsNullOrEmpty(d.address))
+                        .ToList();
+                }).GetAwaiter().GetResult();
+            }
+            catch
+            {
+                return [];
+            }
+        }
+
+        /// <summary>
+        /// Discovers all Nanoleaf devices (both panel-based and Matter WiFi Essentials).
+        /// </summary>
+        /// <param name="waitFor">The time to wait for SSDP responses in milliseconds.</param>
+        /// <param name="mdnsScanTimeSeconds">How long to scan for mDNS devices in seconds.</param>
+        /// <returns>A combined list of tuples containing the address and model of the discovered devices.</returns>
+        public static List<(string address, string model)> DiscoverAllDevices(int waitFor = 5000,
+            int mdnsScanTimeSeconds = 5)
+        {
+            var devices = new List<(string address, string model)>();
+            var seenAddresses = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // SSDP discovery for panel-based devices
+            foreach (var device in DiscoverDevices(waitFor))
+            {
+                if (seenAddresses.Add(device.address))
+                    devices.Add(device);
+            }
+
+            // mDNS discovery for Matter WiFi Essentials devices
+            foreach (var device in DiscoverMatterDevices(mdnsScanTimeSeconds))
+            {
+                if (seenAddresses.Add(device.address))
+                    devices.Add(device);
+            }
+
+            return devices;
+        }
+
+        /// <summary>
+        /// Extracts the model identifier from an mDNS host response.
+        /// Falls back to "MATTER_ESSENTIALS" if not found.
+        /// </summary>
+        private static string ExtractModelFromMdns(IZeroconfHost host)
+        {
+            // The mDNS service instance name often contains the device name
+            // Try to extract a model from TXT records if available
+            foreach (var service in host.Services.Values)
+            {
+                foreach (var property in service.Properties)
+                {
+                    if (property.TryGetValue("md", out var model) && !string.IsNullOrEmpty(model))
+                        return model;
+                }
+            }
+
+            return "MATTER_ESSENTIALS";
         }
 
         /// <summary>

@@ -61,9 +61,12 @@ public class NanoleafConfigurationViewModel : PluginConfigurationViewModel
                 "You are already paired with this device."))
             return;
 
-        if (!await _windowService.ShowConfirmContentDialog("Authentication instructions",
-                "Please press the power button on the device for 5 seconds to enter pairing mode.\r\nThen press the Pair button below.",
-                "Pair"))
+        bool isMatter = NanoleafAPI.IsMatterEssentialsDevice(device.Model);
+        string instructions = isMatter
+            ? "For Matter WiFi Essentials devices:\r\nOpen the Nanoleaf app, go to device settings, and tap 'Connect to API'.\r\nThen press the Pair button below within 30 seconds."
+            : "Please press the power button on the device for 5 seconds to enter pairing mode.\r\nThen press the Pair button below.";
+
+        if (!await _windowService.ShowConfirmContentDialog("Authentication instructions", instructions, "Pair"))
             return;
 
         string? authToken = NanoleafAPI.Authenticate(device.Hostname);
@@ -94,7 +97,7 @@ public class NanoleafConfigurationViewModel : PluginConfigurationViewModel
 
     private async Task ExecuteDiscoverDevices()
     {
-        List<(string address, string model)> discoverDevices = NanoleafDiscoveryHelper.DiscoverDevices();
+        List<(string address, string model)> discoverDevices = NanoleafDiscoveryHelper.DiscoverAllDevices();
         string message = discoverDevices.Count switch
         {
             0 => "No devices found",
