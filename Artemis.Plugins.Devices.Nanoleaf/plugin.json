@@ -5,7 +5,7 @@
     "Author": "jonilala796",
     "Repository": "https://github.com/jonilala796/Artemis.Plugins.Devices.Nanoleaf",
     "Icon": "nanoleaf.png",
-    "Version": "2.2.0",
+    "Version": "2.2.1",
     "Main": "Artemis.Plugins.Devices.Nanoleaf.dll",
     "AutoEnableProperties": true,
     "RequiresAdmin": false,
