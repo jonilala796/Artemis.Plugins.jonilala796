@@ -6,6 +6,7 @@ using Artemis.Plugins.Devices.Nanoleaf.RGB.NET.Enum;
 using Artemis.Plugins.Devices.Nanoleaf.RGB.NET.Generic;
 using Artemis.Plugins.Devices.Nanoleaf.RGB.NET.Helper;
 using RGB.NET.Core;
+using Serilog;
 
 namespace Artemis.Plugins.Devices.Nanoleaf.RGB.NET;
 
@@ -45,6 +46,11 @@ public class NanoleafRGBDeviceProvider : AbstractRGBDeviceProvider
     /// Gets a list of all defined device-definitions.
     /// </summary>
     public List<INanoleafDeviceDefinition> DeviceDefinitions { get; } = [];
+
+    /// <summary>
+    /// Logger supplied by the Artemis device provider. Optional — logging is skipped when null.
+    /// </summary>
+    internal ILogger? Logger { get; set; }
 
     private static readonly Dictionary<INanoleafDeviceDefinition, NanoleafInfo> OldStates = new();
 
@@ -130,11 +136,15 @@ public class NanoleafRGBDeviceProvider : AbstractRGBDeviceProvider
     }
 
 
-    private static NanoleafRGBDevice? CreateNanoleafDevice(INanoleafDeviceDefinition deviceDefinition,
+    private NanoleafRGBDevice? CreateNanoleafDevice(INanoleafDeviceDefinition deviceDefinition,
         IDeviceUpdateTrigger updateTrigger)
     {
         var nanoleafInfo = NanoleafAPI.Info(deviceDefinition.Address, deviceDefinition.AuthToken);
-        if (nanoleafInfo == null) return null;
+        if (nanoleafInfo == null)
+        {
+            Logger?.Warning("Could not retrieve device info for {address}, skipping device", deviceDefinition.Address);
+            return null;
+        }
 
         bool isMatter = NanoleafAPI.IsMatterEssentialsDevice(nanoleafInfo.Model)
                         || nanoleafInfo.PanelLayout?.Layout.PositionData is null or { Count: 0 };
@@ -142,7 +152,12 @@ public class NanoleafRGBDeviceProvider : AbstractRGBDeviceProvider
         if (!isMatter)
         {
             // Panel-based device: check if already in ext-control mode
-            if (nanoleafInfo.State.On.Value && nanoleafInfo.Effects?.Select == "*ExtControl*") return null;
+            if (nanoleafInfo.State.On.Value && nanoleafInfo.Effects?.Select == "*ExtControl*")
+            {
+                Logger?.Debug("Panel device '{name}' at {address} is already in ext-control mode, skipping",
+                    nanoleafInfo.Name, deviceDefinition.Address);
+                return null;
+            }
         }
 
         // Store the initial state info for restoring later
@@ -158,7 +173,12 @@ public class NanoleafRGBDeviceProvider : AbstractRGBDeviceProvider
             NanoleafAPI.SetBrightness(deviceDefinition.Address, deviceDefinition.AuthToken, brightness);
 
             int ledCount = NanoleafAPI.GetLedCount(deviceDefinition.Address, deviceDefinition.AuthToken);
-            if (ledCount <= 0) return null;
+            if (ledCount <= 0)
+            {
+                Logger?.Warning("Could not determine LED count for Matter device '{name}' at {address}, skipping",
+                    nanoleafInfo.Name, deviceDefinition.Address);
+                return null;
+            }
 
             var startExtControl = NanoleafAPI.StartExternalControl(deviceDefinition.Address,
                 deviceDefinition.AuthToken, ExtControlVersion.v2);
@@ -168,6 +188,9 @@ public class NanoleafRGBDeviceProvider : AbstractRGBDeviceProvider
                 ? deviceDefinition.Address
                 : startExtControl.address;
             ushort streamPort = startExtControl.port > 0 ? startExtControl.port : (ushort)60222;
+
+            Logger?.Information("Connected to Nanoleaf device '{name}' ({model}) at {address} [{ledCount} LED(s)]",
+                nanoleafInfo.Name, nanoleafInfo.Model, deviceDefinition.Address, ledCount);
 
             return new NanoleafRGBDevice(new NanoleafRGBDeviceInfo(nanoleafInfo), streamAddress,
                 streamPort, ledCount, updateTrigger);
@@ -182,17 +205,27 @@ public class NanoleafRGBDeviceProvider : AbstractRGBDeviceProvider
                 nanoleafInfo.PanelLayout!.Layout.PositionData[0].ShapeType.GetExtControlVersion());
 
             if (string.IsNullOrEmpty(startExtControl.address) || startExtControl.port == 0)
+            {
+                Logger?.Warning("Failed to start external control for panel device '{name}' at {address}, skipping",
+                    nanoleafInfo.Name, deviceDefinition.Address);
                 return null;
+            }
+
+            int panelCount = nanoleafInfo.PanelLayout?.Layout.NumPanels ?? 0;
+            Logger?.Information("Connected to Nanoleaf device '{name}' ({model}) at {address} [{panelCount} panel(s)]",
+                nanoleafInfo.Name, nanoleafInfo.Model, deviceDefinition.Address, panelCount);
 
             return new NanoleafRGBDevice(new NanoleafRGBDeviceInfo(nanoleafInfo), startExtControl.address,
                 startExtControl.port, updateTrigger);
         }
     }
 
-    private static void RestoreOldNanoleafState(INanoleafDeviceDefinition deviceDefinition)
+    private void RestoreOldNanoleafState(INanoleafDeviceDefinition deviceDefinition)
     {
         if (!OldStates.Remove(deviceDefinition, out var oldStateInfo))
             return;
+
+        Logger?.Debug("Restoring previous state for device at {address}", deviceDefinition.Address);
 
         string? oldEffect = oldStateInfo.Effects?.Select;
 

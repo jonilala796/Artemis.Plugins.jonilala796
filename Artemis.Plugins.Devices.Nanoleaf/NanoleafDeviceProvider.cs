@@ -22,6 +22,7 @@ public class NanoleafDeviceProvider(ILogger logger, IDeviceService deviceService
     public override void Enable()
     {
         RgbDeviceProvider.Exception += Provider_OnException;
+        RgbDeviceProvider.Logger = logger;
         RgbDeviceProvider.DeviceDefinitions.Clear();
 
         PluginSetting<List<DeviceDefinition>> definitions =
@@ -31,6 +32,9 @@ public class NanoleafDeviceProvider(ILogger logger, IDeviceService deviceService
         List<(string Hostname, string Model, string AuthToken, byte Brightness)> devices = (definitions.Value ?? []).Select(deviceDefinition =>
             (deviceDefinition.Hostname, deviceDefinition.Model, deviceDefinition.AuthToken, deviceDefinition.Brightness)).ToList();
 
+        logger.Information("Enabling Nanoleaf plugin with {count} configured device(s)", devices.Count);
+
+        int added = 0;
         foreach ((string hostname, string _, string authToken, byte brightness) in devices)
         {
             try
@@ -41,24 +45,27 @@ public class NanoleafDeviceProvider(ILogger logger, IDeviceService deviceService
                     var reply = pingSender.Send(hostname, 100);
                     if (reply.Status != IPStatus.Success)
                     {
-                        logger.Warning("Ping to {hostname} failed with status {status}", hostname, reply.Status);
+                        logger.Warning("Device at {hostname} is unreachable (ping status: {status}), skipping", hostname, reply.Status);
                         continue;
                     }
                 }
             }
             catch (Exception e)
             {
-                logger.Debug(e, "Ping to {hostname} failed with exception {exception}", hostname, e.Message);
+                logger.Debug(e, "Ping to {hostname} failed with exception", hostname);
                 continue;
             }
             RgbDeviceProvider.DeviceDefinitions.Add(new NanoleafDeviceDefinition(hostname, authToken, brightness));
+            added++;
         }
 
+        logger.Debug("Added {count} reachable device(s) to the provider", added);
         deviceService.AddDeviceProvider(this);
     }
 
     public override void Disable()
     {
+        logger.Information("Disabling Nanoleaf plugin");
         deviceService.RemoveDeviceProvider(this);
 
         RgbDeviceProvider.Exception -= Provider_OnException;
