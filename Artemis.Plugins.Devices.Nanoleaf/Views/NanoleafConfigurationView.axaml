@@ -43,8 +43,7 @@
                             <DataTemplate>
                                 <TextBlock VerticalAlignment="Center"
                                            Margin="12 0"
-                                           Text="{Binding AuthToken, Converter={x:Static converters:AuthTokenMaskConverter.Instance}}"
-                                           ToolTip.Tip="{Binding AuthToken, StringFormat='Token: {0}', FallbackValue='No token set'}" />
+                                           Text="{Binding AuthToken, Converter={x:Static converters:AuthTokenMaskConverter.Instance}}" />
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
