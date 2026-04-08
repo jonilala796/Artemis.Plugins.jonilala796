@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Artemis.Plugins.Devices.Nanoleaf.RGB.NET.Enum;
@@ -13,6 +14,14 @@ namespace Artemis.Plugins.Devices.Nanoleaf.RGB.NET.API
     /// </summary>
     public static class NanoleafAPI
     {
+        /// <summary>
+        /// Creates a <see cref="StringContent"/> with pre-serialized JSON so that Content-Length
+        /// is always set.  <see cref="JsonContent"/> serializes lazily and reports an unknown
+        /// length, which causes <see cref="HttpClient"/> to use Transfer-Encoding: chunked.
+        /// The Matter WiFi Essentials devices cannot parse chunked requests.
+        /// </summary>
+        private static StringContent JsonBody(object value) =>
+            new(JsonSerializer.Serialize(value), Encoding.UTF8, "application/json");
         /// <summary>
         /// Known model numbers for Nanoleaf Matter WiFi Essentials devices.
         /// </summary>
@@ -102,10 +111,10 @@ namespace Artemis.Plugins.Devices.Nanoleaf.RGB.NET.API
             using HttpClient client = new();
             try
             {
-                var uri = new UriBuilder("http", address, 16021, $"/api/v1/{authToken}/state/brightness").Uri;
+                var uri = new UriBuilder("http", address, 16021, $"/api/v1/{authToken}/state").Uri;
                 var request = new HttpRequestMessage(HttpMethod.Put, uri)
                 {
-                    Content = JsonContent.Create(new { brightness = new { value = brightness } })
+                    Content = JsonBody(new { brightness = new { value = brightness } })
                 };
                 client.Send(request);
             }
@@ -128,10 +137,10 @@ namespace Artemis.Plugins.Devices.Nanoleaf.RGB.NET.API
             using HttpClient client = new();
             try
             {
-                var uri = new UriBuilder("http", address, 16021, $"/api/v1/{authToken}/state/on").Uri;
+                var uri = new UriBuilder("http", address, 16021, $"/api/v1/{authToken}/state").Uri;
                 var request = new HttpRequestMessage(HttpMethod.Put, uri)
                 {
-                    Content = JsonContent.Create(new { on = new { value = on } })
+                    Content = JsonBody(new { on = new { value = on } })
                 };
                 client.Send(request);
             }
@@ -157,10 +166,7 @@ namespace Artemis.Plugins.Devices.Nanoleaf.RGB.NET.API
                 var uri = new UriBuilder("http", address, 16021, $"/api/v1/{authToken}/effects").Uri;
                 var request = new HttpRequestMessage(HttpMethod.Put, uri)
                 {
-                    Content = JsonContent.Create(new
-                    {
-                        select = effectName
-                    })
+                    Content = JsonBody(new { select = effectName })
                 };
                 client.Send(request);
             }
@@ -185,7 +191,7 @@ namespace Artemis.Plugins.Devices.Nanoleaf.RGB.NET.API
                 var uri = new UriBuilder("http", address, 16021, $"/api/v1/{authToken}/state").Uri;
                 var request = new HttpRequestMessage(HttpMethod.Put, uri)
                 {
-                    Content = JsonContent.Create(new
+                    Content = JsonBody(new
                     {
                         brightness = new { value = stateInfo.Brightness.Value },
                         ct = new { value = stateInfo.Ct.Value },
@@ -220,7 +226,7 @@ namespace Artemis.Plugins.Devices.Nanoleaf.RGB.NET.API
                 var uri = new UriBuilder("http", address, 16021, $"/api/v1/{authToken}/effects").Uri;
                 var request = new HttpRequestMessage(HttpMethod.Put, uri)
                 {
-                    Content = JsonContent.Create(new
+                    Content = JsonBody(new
                     {
                         write = new
                         {

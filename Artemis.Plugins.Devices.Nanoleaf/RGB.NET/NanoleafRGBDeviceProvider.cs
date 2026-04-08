@@ -148,11 +148,15 @@ public class NanoleafRGBDeviceProvider : AbstractRGBDeviceProvider
         // Store the initial state info for restoring later
         OldStates[deviceDefinition] = nanoleafInfo;
 
-        NanoleafAPI.SetBrightness(deviceDefinition.Address, deviceDefinition.AuthToken, deviceDefinition.Brightness);
+        // Ensure brightness is at least 1 (default 0 means invisible)
+        byte brightness = deviceDefinition.Brightness > 0 ? deviceDefinition.Brightness : (byte)100;
 
         if (isMatter)
         {
-            // Matter WiFi Essentials: get LED count and use v2 streaming on port 60222
+            // Matter WiFi Essentials: turn on the device, set brightness, then activate ext control
+            NanoleafAPI.SetOnOff(deviceDefinition.Address, deviceDefinition.AuthToken, true);
+            NanoleafAPI.SetBrightness(deviceDefinition.Address, deviceDefinition.AuthToken, brightness);
+
             int ledCount = NanoleafAPI.GetLedCount(deviceDefinition.Address, deviceDefinition.AuthToken);
             if (ledCount <= 0) return null;
 
@@ -170,10 +174,15 @@ public class NanoleafRGBDeviceProvider : AbstractRGBDeviceProvider
         }
         else
         {
+            NanoleafAPI.SetBrightness(deviceDefinition.Address, deviceDefinition.AuthToken, brightness);
+
             // Panel-based device
             var startExtControl = NanoleafAPI.StartExternalControl(deviceDefinition.Address,
                 deviceDefinition.AuthToken,
                 nanoleafInfo.PanelLayout!.Layout.PositionData[0].ShapeType.GetExtControlVersion());
+
+            if (string.IsNullOrEmpty(startExtControl.address) || startExtControl.port == 0)
+                return null;
 
             return new NanoleafRGBDevice(new NanoleafRGBDeviceInfo(nanoleafInfo), startExtControl.address,
                 startExtControl.port, updateTrigger);
