@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using Artemis.Plugins.Devices.Nanoleaf.RGB.NET.API;
 using Artemis.Plugins.Devices.Nanoleaf.RGB.NET.Enum;
@@ -65,11 +66,29 @@ public class NanoleafRGBDeviceProvider : AbstractRGBDeviceProvider
     {
         lock (_lock)
         {
+            // Phase 1 (before UDP close): restore effect/color and turn on devices that
+            // were already on. These HTTP commands are processed reliably while ext control
+            // is still active on Matter devices.
+            foreach (var deviceDefinition in DeviceDefinitions)
+                RestoreOldNanoleafState(deviceDefinition);
+
+            // Phase 2: close UDP — devices begin exiting ext-control mode.
             base.Dispose(disposing);
 
-            foreach (var deviceDefinition in DeviceDefinitions)
+            // Phase 3: for devices that were originally off, wait for the ext-control
+            // timeout to expire before sending SetOnOff(false). Matter devices ignore HTTP
+            // on/off commands sent during the ext-control transition, so we wait ~1.5 s to
+            // be safe before turning them off.
+            var offDevices = OldStates
+                .Where(kvp => !kvp.Value.State.On.Value)
+                .Select(kvp => kvp.Key)
+                .ToList();
+
+            if (offDevices.Count > 0)
             {
-                RestoreOldNanoleafState(deviceDefinition);
+                Thread.Sleep(1500);
+                foreach (var deviceDefinition in offDevices)
+                    NanoleafAPI.SetOnOff(deviceDefinition.Address, deviceDefinition.AuthToken, false);
             }
 
             DeviceDefinitions.Clear();
@@ -160,6 +179,15 @@ public class NanoleafRGBDeviceProvider : AbstractRGBDeviceProvider
             }
         }
 
+        // For Matter devices the root info endpoint omits the effects section.
+        // Fetch the current effect separately so it can be restored on shutdown.
+        if (isMatter && nanoleafInfo.Effects == null)
+        {
+            string? currentEffect = NanoleafAPI.GetCurrentEffect(deviceDefinition.Address, deviceDefinition.AuthToken);
+            if (!string.IsNullOrEmpty(currentEffect))
+                nanoleafInfo.Effects = new NanoleafInfo.EffectsInfo { Select = currentEffect };
+        }
+
         // Store the initial state info for restoring later
         OldStates[deviceDefinition] = nanoleafInfo;
 
@@ -222,25 +250,30 @@ public class NanoleafRGBDeviceProvider : AbstractRGBDeviceProvider
 
     private void RestoreOldNanoleafState(INanoleafDeviceDefinition deviceDefinition)
     {
-        if (!OldStates.Remove(deviceDefinition, out var oldStateInfo))
+        if (!OldStates.TryGetValue(deviceDefinition, out var oldStateInfo))
             return;
 
         Logger?.Debug("Restoring previous state for device at {address}", deviceDefinition.Address);
 
         string? oldEffect = oldStateInfo.Effects?.Select;
+        bool hadEffect = !string.IsNullOrEmpty(oldEffect) && !oldEffect.Contains('*');
 
-        if (string.IsNullOrEmpty(oldEffect) || oldEffect.Contains('*'))
+        if (hadEffect)
         {
-            // Matter devices have no effects, or effect was internal — restore state directly
-            NanoleafAPI.SetState(deviceDefinition.Address, deviceDefinition.AuthToken, oldStateInfo.State);
+            NanoleafAPI.SetEffect(deviceDefinition.Address, deviceDefinition.AuthToken, oldEffect!);
         }
         else
         {
-            NanoleafAPI.SetEffect(deviceDefinition.Address, deviceDefinition.AuthToken, oldEffect);
-            NanoleafAPI.SetBrightness(deviceDefinition.Address, deviceDefinition.AuthToken,
-                oldStateInfo.State.Brightness.Value);
-            NanoleafAPI.SetOnOff(deviceDefinition.Address, deviceDefinition.AuthToken, oldStateInfo.State.On.Value);
+            // Restore color mode (ct or hs). on/off is handled below (was on) or in
+            // Phase 3 of Dispose after ext-control expires (was off).
+            NanoleafAPI.SetState(deviceDefinition.Address, deviceDefinition.AuthToken, oldStateInfo.State);
         }
+
+        // For devices that were on, commit the on state now while ext control is still
+        // active — this is reliably processed. Devices that were off are handled in
+        // Phase 3 of Dispose after waiting for the ext-control timeout.
+        if (oldStateInfo.State.On.Value)
+            NanoleafAPI.SetOnOff(deviceDefinition.Address, deviceDefinition.AuthToken, true);
     }
 
     protected override IDeviceUpdateTrigger CreateUpdateTrigger(int id, double updateRateHardLimit) =>

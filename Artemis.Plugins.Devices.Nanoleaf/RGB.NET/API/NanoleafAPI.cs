@@ -189,16 +189,28 @@ namespace Artemis.Plugins.Devices.Nanoleaf.RGB.NET.API
             try
             {
                 var uri = new UriBuilder("http", address, 16021, $"/api/v1/{authToken}/state").Uri;
-                var request = new HttpRequestMessage(HttpMethod.Put, uri)
-                {
-                    Content = JsonBody(new
+
+                // Send only the color parameters relevant to the original color mode.
+                // Sending both ct and hue/sat simultaneously can cause the device to pick
+                // hue/sat (often hue=0 = red) instead of restoring the intended color.
+                object body = string.Equals(stateInfo.ColorMode, "ct", StringComparison.OrdinalIgnoreCase)
+                    ? new
                     {
                         brightness = new { value = stateInfo.Brightness.Value },
                         ct = new { value = stateInfo.Ct.Value },
+                        on = new { value = stateInfo.On.Value }
+                    }
+                    : (object)new
+                    {
+                        brightness = new { value = stateInfo.Brightness.Value },
                         hue = new { value = stateInfo.Hue.Value },
                         sat = new { value = stateInfo.Sat.Value },
                         on = new { value = stateInfo.On.Value }
-                    })
+                    };
+
+                var request = new HttpRequestMessage(HttpMethod.Put, uri)
+                {
+                    Content = JsonBody(body)
                 };
                 client.Send(request);
             }
@@ -284,6 +296,33 @@ namespace Artemis.Plugins.Devices.Nanoleaf.RGB.NET.API
             // ReSharper disable once UnusedAutoPropertyAccessor.Local
             public string? AuthToken { get; init; }
         }
+
+        /// <summary>
+        /// Gets the currently selected effect on the Nanoleaf device.
+        /// Useful for Matter WiFi Essentials devices whose root info endpoint does not include an effects section.
+        /// </summary>
+        /// <param name="address">The address of the device.</param>
+        /// <param name="authToken">The authentication token of the device.</param>
+        /// <returns>The effect name, or null if unavailable.</returns>
+        public static string? GetCurrentEffect(string address, string authToken)
+        {
+            if (string.IsNullOrEmpty(address) || string.IsNullOrEmpty(authToken)) return null;
+
+            using HttpClient client = new();
+            try
+            {
+                var uri = new UriBuilder("http", address, 16021, $"/api/v1/{authToken}/effects/select").Uri;
+                return client.Send(new HttpRequestMessage(HttpMethod.Get, uri))
+                    .Content
+                    .ReadFromJsonAsync<string>()
+                    .Result;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
 
         /// <summary>
         /// Gets the number of LEDs on a Matter WiFi Essentials device.
