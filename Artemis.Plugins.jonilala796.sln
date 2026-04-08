@@ -5,6 +5,8 @@ VisualStudioVersion = 17.0.32014.148
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Artemis.Plugins.Devices.Nanoleaf", "Artemis.Plugins.Devices.Nanoleaf\Artemis.Plugins.Devices.Nanoleaf.csproj", "{22125201-CE03-40B2-927E-01E828D504F1}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Artemis.Plugins.Nodes.DateTime", "Artemis.Plugins.Nodes.DateTime\Artemis.Plugins.Nodes.DateTime.csproj", "{23358CAB-934D-4F48-B697-5231C280B0EE}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -15,5 +17,9 @@ Global
 		{22125201-CE03-40B2-927E-01E828D504F1}.Debug|x64.Build.0 = Debug|x64
 		{22125201-CE03-40B2-927E-01E828D504F1}.Release|x64.ActiveCfg = Release|x64
 		{22125201-CE03-40B2-927E-01E828D504F1}.Release|x64.Build.0 = Release|x64
+		{23358CAB-934D-4F48-B697-5231C280B0EE}.Debug|x64.ActiveCfg = Debug|x64
+		{23358CAB-934D-4F48-B697-5231C280B0EE}.Debug|x64.Build.0 = Debug|x64
+		{23358CAB-934D-4F48-B697-5231C280B0EE}.Release|x64.ActiveCfg = Release|x64
+		{23358CAB-934D-4F48-B697-5231C280B0EE}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 EndGlobal

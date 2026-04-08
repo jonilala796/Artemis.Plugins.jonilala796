@@ -9,7 +9,7 @@ namespace Artemis.Plugins.Devices.Nanoleaf.RGB.NET.Generic;
 public class NanoleafRGBDeviceInfo : IRGBDeviceInfo
 {
     /// <summary>
-    /// 
+    /// Gets the type of the RGB device.
     /// </summary>
     public RGBDeviceType DeviceType { get; }
 
@@ -18,7 +18,12 @@ public class NanoleafRGBDeviceInfo : IRGBDeviceInfo
     public string Model { get; }
     public object? LayoutMetadata { get; set; }
     public NanoleafInfo Info { get; }
-    
+
+    /// <summary>
+    /// Gets whether this device is a Matter WiFi Essentials device (LED-indexed, no panel layout).
+    /// </summary>
+    public bool IsMatterEssentials { get; }
+
     public Dictionary<LedId, int> LedIdToIndex = new();
 
     public NanoleafRGBDeviceInfo(NanoleafInfo info)
@@ -27,6 +32,20 @@ public class NanoleafRGBDeviceInfo : IRGBDeviceInfo
         DeviceName = info.Name;
         Manufacturer = "Nanoleaf";
         Model = info.Model;
-        DeviceType = info.PanelLayout.Layout.PositionData[0].ShapeType == NanoleafShapeType.Lightstrip4D ? RGBDeviceType.LedStripe : RGBDeviceType.Unknown;
+
+        var positionData = info.PanelLayout?.Layout.PositionData;
+        IsMatterEssentials = NanoleafAPI.IsMatterEssentialsDevice(info.Model)
+                             || positionData is null or { Count: 0 };
+
+        if (IsMatterEssentials)
+        {
+            DeviceType = RGBDeviceType.LedStripe;
+        }
+        else
+        {
+            DeviceType = positionData![0].ShapeType == NanoleafShapeType.Lightstrip4D
+                ? RGBDeviceType.LedStripe
+                : RGBDeviceType.Unknown;
+        }
     }
 }

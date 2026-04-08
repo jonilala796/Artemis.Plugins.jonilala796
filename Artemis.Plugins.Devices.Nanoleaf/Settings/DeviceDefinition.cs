@@ -4,7 +4,7 @@ namespace Artemis.Plugins.Devices.Nanoleaf.Settings;
 
 public class DeviceDefinition : CorePropertyChanged
 {
-    private string _hostname;
+    private string _hostname = "";
 
     public string Hostname
     {
@@ -12,7 +12,7 @@ public class DeviceDefinition : CorePropertyChanged
         set => SetAndNotify(ref _hostname, value);
     }
 
-    private string _model;
+    private string _model = "";
 
     public string Model
     {
@@ -20,7 +20,7 @@ public class DeviceDefinition : CorePropertyChanged
         set => SetAndNotify(ref _model, value);
     }
 
-    private string _authToken;
+    private string _authToken = "";
 
     public string AuthToken
     {

@@ -9,19 +9,45 @@ namespace Artemis.Plugins.Devices.Nanoleaf.RGB.NET.Generic;
 
 public sealed class NanoleafRGBDevice : AbstractRGBDevice<NanoleafRGBDeviceInfo>
 {
+    /// <summary>
+    /// Creates a panel-based Nanoleaf device (Shapes, Canvas, Elements, Lines, Skylight, etc.).
+    /// </summary>
     internal NanoleafRGBDevice(NanoleafRGBDeviceInfo deviceInfo, string address, ushort port,
         IDeviceUpdateTrigger updateTrigger)
         : base(deviceInfo,
-            new NanoleafDeviceUpdateQueue(updateTrigger, address, port, deviceInfo.Info.PanelLayout.Layout.NumPanels,
-                deviceInfo.Info.PanelLayout.Layout.PositionData[0].ShapeType.GetExtControlVersion(),
+            new NanoleafDeviceUpdateQueue(updateTrigger, address, port,
+                deviceInfo.Info.PanelLayout?.Layout.NumPanels ?? 0,
+                GetExtControlVersion(deviceInfo),
                 deviceInfo.LedIdToIndex))
     {
         InitializeLayout();
     }
 
+    /// <summary>
+    /// Creates a Matter WiFi Essentials device with LED-indexed addressing.
+    /// </summary>
+    internal NanoleafRGBDevice(NanoleafRGBDeviceInfo deviceInfo, string address, ushort port,
+        int ledCount, IDeviceUpdateTrigger updateTrigger)
+        : base(deviceInfo,
+            new NanoleafDeviceUpdateQueue(updateTrigger, address, port, ledCount,
+                ExtControlVersion.v2,
+                deviceInfo.LedIdToIndex))
+    {
+        InitializeMatterLayout(ledCount);
+    }
+
+    private static ExtControlVersion? GetExtControlVersion(NanoleafRGBDeviceInfo deviceInfo)
+    {
+        var positionData = deviceInfo.Info.PanelLayout?.Layout.PositionData;
+        return positionData is { Count: > 0 } ? positionData[0].ShapeType.GetExtControlVersion() : null;
+    }
+
     private void InitializeLayout()
     {
-        List<NanoleafInfo.PositionDataInfo> positionData = DeviceInfo.Info.PanelLayout.Layout.PositionData;
+        List<NanoleafInfo.PositionDataInfo>? positionData = DeviceInfo.Info.PanelLayout?.Layout.PositionData;
+        if (positionData is null or { Count: 0 })
+            return;
+
         int maxY = positionData.Max(p => p.Y);
         int i = 0;
         foreach (var position in positionData)
@@ -42,6 +68,22 @@ public sealed class NanoleafRGBDevice : AbstractRGBDevice<NanoleafRGBDeviceInfo>
             }
         }
 
-        Rotation = Rotation.FromDegrees(DeviceInfo.Info.PanelLayout.GlobalOrientation.Value);
+        Rotation = Rotation.FromDegrees(DeviceInfo.Info.PanelLayout?.GlobalOrientation.Value ?? 0);
+    }
+
+    /// <summary>
+    /// Initializes a linear LED layout for Matter WiFi Essentials devices.
+    /// LEDs are addressed sequentially by index (0 to N-1).
+    /// </summary>
+    private void InitializeMatterLayout(int ledCount)
+    {
+        const float ledSize = 10f;
+
+        for (int i = 0; i < ledCount; i++)
+        {
+            var ledId = LedId.LedStripe1 + i;
+            DeviceInfo.LedIdToIndex.Add(ledId, i);
+            AddLed(ledId, new Point(i * ledSize, 0), new Size(ledSize, ledSize));
+        }
     }
 }

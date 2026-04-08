@@ -10,11 +10,13 @@
     <Grid RowDefinitions="Auto,Auto,300,Auto,Auto,*">
         <Grid Grid.Row="0" Classes="plugin-introduction" ColumnDefinitions="*, Auto">
             <TextBlock Grid.Column="0" TextWrapping="Wrap">
-                This plugin allows you to control Nanoleaf devices.
+                This plugin allows you to control Nanoleaf devices, including Shapes, Canvas, Elements, Lines, Skylight,
+                and Matter WiFi Essentials products (Lightstrips, String Lights, Bulbs, etc.).
                 <LineBreak />
-                To get started, please enter the IP address of your Nanoleaf device below or use the Discover button to find it automatically.
+                Use the Discover button to find devices automatically (SSDP + mDNS), or add one manually by IP address.
                 <LineBreak />
-                After that, you have to pair your device by clicking the Lock button
+                After adding a device, click the Lock button to pair. For Matter Essentials devices, open the Nanoleaf app
+                and tap "Connect to API" under device settings before pairing.
             </TextBlock>
         </Grid>
         <TextBlock Grid.Row="1" Classes="card-title">Devices</TextBlock>

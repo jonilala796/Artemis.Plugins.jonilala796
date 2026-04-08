@@ -1,19 +1,16 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
-using System.Net;
 using System.Reactive;
 using System.Threading.Tasks;
 using Artemis.Core;
 using Artemis.Core.Services;
 using Artemis.Plugins.Devices.Nanoleaf.Helper;
 using Artemis.Plugins.Devices.Nanoleaf.RGB.NET.API;
-using Artemis.Plugins.Devices.Nanoleaf.RGB.NET.Helper;
 using Artemis.Plugins.Devices.Nanoleaf.Settings;
 using Artemis.Plugins.Devices.Nanoleaf.ViewModels.Dialogs;
 using Artemis.UI.Shared;
 using Artemis.UI.Shared.Services;
-using DynamicData;
 using ReactiveUI;
 
 namespace Artemis.Plugins.Devices.Nanoleaf.ViewModels;
@@ -46,7 +43,7 @@ public class NanoleafConfigurationViewModel : PluginConfigurationViewModel
 
         _definitions = settings.GetSetting(nameof(DeviceDefinitions), new List<DeviceDefinition>());
 
-        DeviceDefinitions = new ObservableCollection<DeviceDefinition>(_definitions.Value);
+        DeviceDefinitions = new ObservableCollection<DeviceDefinition>(_definitions.Value ?? []);
 
         AddDevice = ReactiveCommand.CreateFromTask(ExecuteAddDevice);
         EditDevice = ReactiveCommand.CreateFromTask<DeviceDefinition>(ExecuteEditDevice);
@@ -64,9 +61,12 @@ public class NanoleafConfigurationViewModel : PluginConfigurationViewModel
                 "You are already paired with this device."))
             return;
 
-        if (!await _windowService.ShowConfirmContentDialog("Authentication instructions",
-                "Please press the power button on the device for 5 seconds to enter pairing mode.\r\nThen press the Pair button below.",
-                "Pair"))
+        bool isMatter = NanoleafAPI.IsMatterEssentialsDevice(device.Model);
+        string instructions = isMatter
+            ? "For Matter WiFi Essentials devices:\r\nOpen the Nanoleaf app, go to device settings, and tap 'Connect to API'.\r\nThen press the Pair button below within 30 seconds."
+            : "Please press the power button on the device for 5 seconds to enter pairing mode.\r\nThen press the Pair button below.";
+
+        if (!await _windowService.ShowConfirmContentDialog("Authentication instructions", instructions, "Pair"))
             return;
 
         string? authToken = NanoleafAPI.Authenticate(device.Hostname);
@@ -79,7 +79,7 @@ public class NanoleafConfigurationViewModel : PluginConfigurationViewModel
         {
             PluginSetting<List<DeviceDefinition>> definitions =
                 _settings.GetSetting(nameof(DeviceDefinitions), new List<DeviceDefinition>());
-            var matchedDevice = definitions.Value.FirstOrDefault(d => d.Hostname == device.Hostname);
+            var matchedDevice = definitions.Value?.FirstOrDefault(d => d.Hostname == device.Hostname);
             if (matchedDevice != null)
             {
                 matchedDevice.AuthToken = authToken;
@@ -88,7 +88,7 @@ public class NanoleafConfigurationViewModel : PluginConfigurationViewModel
             {
                 // Fallback: update the token on the passed instance.
                 device.AuthToken = authToken;
-                definitions.Value.Add(device);
+                definitions.Value?.Add(device);
             }
             await _windowService.ShowConfirmContentDialog("Authentication successful",
                 "You have successfully authenticated with the device");
@@ -97,7 +97,7 @@ public class NanoleafConfigurationViewModel : PluginConfigurationViewModel
 
     private async Task ExecuteDiscoverDevices()
     {
-        List<(string address, string model)> discoverDevices = NanoleafDiscoveryHelper.DiscoverDevices();
+        List<(string address, string model)> discoverDevices = NanoleafDiscoveryHelper.DiscoverAllDevices();
         string message = discoverDevices.Count switch
         {
             0 => "No devices found",
@@ -110,16 +110,12 @@ public class NanoleafConfigurationViewModel : PluginConfigurationViewModel
 
 
         //check if devices with the ip address already exist
-        foreach ((var ipAddress, string? model) in discoverDevices)
+        foreach ((var ipAddress, string model) in discoverDevices)
         {
-            if (_definitions.Value.Any(d => ipAddress.Equals(d.Hostname)))
+            if ((_definitions.Value ?? []).Any(d => ipAddress.Equals(d.Hostname)))
                 continue;
 
-
-            if (ipAddress == null)
-                continue;
-
-            _definitions.Value.Add(new DeviceDefinition
+            _definitions.Value?.Add(new DeviceDefinition
             {
                 Hostname = ipAddress,
                 Model = model,
@@ -143,7 +139,7 @@ public class NanoleafConfigurationViewModel : PluginConfigurationViewModel
             DeviceDialogResult.Save)
             return;
 
-        _definitions.Value.Add(device);
+        _definitions.Value?.Add(device);
         DeviceDefinitions.Add(device);
     }
 
@@ -170,7 +166,7 @@ public class NanoleafConfigurationViewModel : PluginConfigurationViewModel
 
     private void ExecuteRemoveDevice(DeviceDefinition device)
     {
-        _definitions.Value.Remove(device);
+        _definitions.Value?.Remove(device);
         DeviceDefinitions.Remove(device);
     }
 

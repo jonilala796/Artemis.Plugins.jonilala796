@@ -1,0 +1,15 @@
+{
+    "Guid": "16D822E3-6DC0-4A05-9DB4-3B710DED8DF5",
+    "Name": "DateTime Nodes",
+    "Description": "Provides nodes for handling DateTime objects and related functionality",
+    "Author": "jonilala796",
+    "Website": "",
+    "Repository": "https://github.com/jonilala796/Artemis.Plugins.jonilala796",
+    "Icon": "CalendarClock",
+    "Version": "1.0.0.0",
+    "Main": "Artemis.Plugins.Nodes.DateTime.dll",
+    "AutoEnableProperties": true,
+    "RequiresAdmin": false,
+    "Platforms": "Windows,Linux,OSX",
+    "MinimumVersion": "1.2025.1222.3"
+}
