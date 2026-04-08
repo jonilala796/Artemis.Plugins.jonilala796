@@ -28,10 +28,10 @@ public class NanoleafDeviceProvider(ILogger logger, IDeviceService deviceService
             settings.GetSetting(nameof(NanoleafConfigurationViewModel.DeviceDefinitions),
                 new List<DeviceDefinition>());
 
-        List<(string Hostname, string Model, string AuthToken, byte Brightness)> devices = definitions.Value.Select(deviceDefinition =>
+        List<(string Hostname, string Model, string AuthToken, byte Brightness)> devices = (definitions.Value ?? []).Select(deviceDefinition =>
             (deviceDefinition.Hostname, deviceDefinition.Model, deviceDefinition.AuthToken, deviceDefinition.Brightness)).ToList();
 
-        foreach ((string hostname, string model, string authToken, byte brightness) in devices)
+        foreach ((string hostname, string _, string authToken, byte brightness) in devices)
         {
             try
             {
@@ -68,7 +68,7 @@ public class NanoleafDeviceProvider(ILogger logger, IDeviceService deviceService
 
     public override NanoleafRGBDeviceProvider RgbDeviceProvider => NanoleafRGBDeviceProvider.Instance;
 
-    private void Provider_OnException(object sender, ExceptionEventArgs args)
+    private void Provider_OnException(object? sender, ExceptionEventArgs args)
     {
         logger.Debug(args.Exception, "Nanoleaf Exception: {message}", args.Exception.Message);
     }

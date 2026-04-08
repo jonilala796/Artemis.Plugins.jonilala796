@@ -1,9 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Net.Http;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Threading.Tasks;
 using Artemis.Plugins.Devices.Nanoleaf.RGB.NET.Enum;
 
 namespace Artemis.Plugins.Devices.Nanoleaf.RGB.NET.API
@@ -13,6 +14,39 @@ namespace Artemis.Plugins.Devices.Nanoleaf.RGB.NET.API
     /// </summary>
     public static class NanoleafAPI
     {
+        /// <summary>
+        /// Creates a <see cref="StringContent"/> with pre-serialized JSON so that Content-Length
+        /// is always set.  <see cref="JsonContent"/> serializes lazily and reports an unknown
+        /// length, which causes <see cref="HttpClient"/> to use Transfer-Encoding: chunked.
+        /// The Matter WiFi Essentials devices cannot parse chunked requests.
+        /// </summary>
+        private static StringContent JsonBody(object value) =>
+            new(JsonSerializer.Serialize(value), Encoding.UTF8, "application/json");
+        /// <summary>
+        /// Known model numbers for Nanoleaf Matter WiFi Essentials devices.
+        /// </summary>
+        private static readonly HashSet<string> MatterEssentialsModels = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "NL71K1", // Essentials Holiday String Lights (2023)
+            "NL71K2", // Essentials Holiday String Lights (2024)
+            "NL72K1", // Essentials Indoor HD Lightstrip
+            "NL72K3", // Essentials Indoor Lightstrip
+            "NL72K4", // Floor Lamp
+            "NL72K6", // Rope Lights
+            "NL73K1", // Essentials Outdoor String Lights
+            "NL73K3", // Essentials Permanent Outdoor Lights
+            "NL75K1", // Essentials WiFi A19
+        };
+
+        /// <summary>
+        /// Determines whether the specified model number corresponds to a Matter WiFi Essentials device.
+        /// </summary>
+        /// <param name="model">The model number to check.</param>
+        /// <returns><c>true</c> if the model is a Matter WiFi Essentials device; otherwise, <c>false</c>.</returns>
+        public static bool IsMatterEssentialsDevice(string? model)
+        {
+            return !string.IsNullOrEmpty(model) && MatterEssentialsModels.Contains(model);
+        }
         /// <summary>
         /// Gets the data returned by the 'info' endpoint of the Nanoleaf-device.
         /// </summary>
@@ -77,10 +111,10 @@ namespace Artemis.Plugins.Devices.Nanoleaf.RGB.NET.API
             using HttpClient client = new();
             try
             {
-                var uri = new UriBuilder("http", address, 16021, $"/api/v1/{authToken}/state/brightness").Uri;
+                var uri = new UriBuilder("http", address, 16021, $"/api/v1/{authToken}/state").Uri;
                 var request = new HttpRequestMessage(HttpMethod.Put, uri)
                 {
-                    Content = JsonContent.Create(new { brightness = new { value = brightness } })
+                    Content = JsonBody(new { brightness = new { value = brightness } })
                 };
                 client.Send(request);
             }
@@ -103,10 +137,10 @@ namespace Artemis.Plugins.Devices.Nanoleaf.RGB.NET.API
             using HttpClient client = new();
             try
             {
-                var uri = new UriBuilder("http", address, 16021, $"/api/v1/{authToken}/state/on").Uri;
+                var uri = new UriBuilder("http", address, 16021, $"/api/v1/{authToken}/state").Uri;
                 var request = new HttpRequestMessage(HttpMethod.Put, uri)
                 {
-                    Content = JsonContent.Create(new { on = new { value = on } })
+                    Content = JsonBody(new { on = new { value = on } })
                 };
                 client.Send(request);
             }
@@ -132,10 +166,7 @@ namespace Artemis.Plugins.Devices.Nanoleaf.RGB.NET.API
                 var uri = new UriBuilder("http", address, 16021, $"/api/v1/{authToken}/effects").Uri;
                 var request = new HttpRequestMessage(HttpMethod.Put, uri)
                 {
-                    Content = JsonContent.Create(new
-                    {
-                        select = effectName
-                    })
+                    Content = JsonBody(new { select = effectName })
                 };
                 client.Send(request);
             }
@@ -160,7 +191,7 @@ namespace Artemis.Plugins.Devices.Nanoleaf.RGB.NET.API
                 var uri = new UriBuilder("http", address, 16021, $"/api/v1/{authToken}/state").Uri;
                 var request = new HttpRequestMessage(HttpMethod.Put, uri)
                 {
-                    Content = JsonContent.Create(new
+                    Content = JsonBody(new
                     {
                         brightness = new { value = stateInfo.Brightness.Value },
                         ct = new { value = stateInfo.Ct.Value },
@@ -195,7 +226,7 @@ namespace Artemis.Plugins.Devices.Nanoleaf.RGB.NET.API
                 var uri = new UriBuilder("http", address, 16021, $"/api/v1/{authToken}/effects").Uri;
                 var request = new HttpRequestMessage(HttpMethod.Put, uri)
                 {
-                    Content = JsonContent.Create(new
+                    Content = JsonBody(new
                     {
                         write = new
                         {
@@ -252,6 +283,41 @@ namespace Artemis.Plugins.Devices.Nanoleaf.RGB.NET.API
             [JsonPropertyName("auth_token")]
             // ReSharper disable once UnusedAutoPropertyAccessor.Local
             public string? AuthToken { get; init; }
+        }
+
+        /// <summary>
+        /// Gets the number of LEDs on a Matter WiFi Essentials device.
+        /// </summary>
+        /// <param name="address">The address of the device to query.</param>
+        /// <param name="authToken">The authentication token of the device.</param>
+        /// <returns>The number of LEDs, or 0 if the request fails.</returns>
+        public static int GetLedCount(string address, string authToken)
+        {
+            if (string.IsNullOrEmpty(address) || string.IsNullOrEmpty(authToken)) return 0;
+
+            using HttpClient client = new();
+            try
+            {
+                var uri = new UriBuilder("http", address, 16021, $"/api/v1/{authToken}/length").Uri;
+                var response = client.Send(new HttpRequestMessage(HttpMethod.Get, uri))
+                    .Content
+                    .ReadFromJsonAsync<LedCountResponse>()
+                    .Result;
+                return response?.NumLEDs ?? 0;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        /// <summary>
+        /// Represents the response from the length endpoint.
+        /// </summary>
+        private class LedCountResponse
+        {
+            [JsonPropertyName("numLEDs")]
+            public int NumLEDs { get; init; }
         }
     }
 }

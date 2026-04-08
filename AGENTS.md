@@ -1,10 +1,16 @@
 # Repository Guidelines
 
 ## Project Structure & Modules
-- `Artemis.Plugins.Devices.Nanoleaf/` contains the plugin source; core entry points are `NanoleafBootstrapper.cs` and `NanoleafDeviceProvider.cs`.
-- `RGB.NET/` holds Nanoleaf-specific device abstractions and helpers; `Helper/` and `Settings/` manage discovery and stored device definitions.
-- UI is under `ViewModels/` and `Views/` (Avalonia `.axaml` views for configuration dialogs); assets live in `Resources/`.
-- Build outputs land in `Artemis.Plugins.Devices.Nanoleaf/bin/x64/{Debug,Release}/net10.0/` alongside `plugin.json` and `nanoleaf.png`.
+- `Artemis.Plugins.Devices.Nanoleaf/` contains the Nanoleaf device plugin; core entry points are `NanoleafBootstrapper.cs` and `NanoleafDeviceProvider.cs`.
+  - `Helper/` — network discovery (`NanoleafDiscoveryHelper.cs`: SSDP for panel devices, mDNS/Zeroconf for Matter WiFi Essentials).
+  - `Settings/` — persisted device definitions (`DeviceDefinition.cs`, `PendingRestoreState.cs`).
+  - `RGB.NET/` — device abstractions and Nanoleaf REST client:
+    - `API/` — `NanoleafAPI.cs` (REST client wrapping the Nanoleaf Open API on port 16021) and `NanoleafInfo.cs` (response models).
+    - `Generic/` — `INanoleafDeviceDefinition`, `NanoleafRGBDevice`, `NanoleafDeviceUpdateQueue` (RGB.NET integration layer).
+    - `Attributes/`, `Enum/`, `Helper/` — shape/ext-control metadata and enum extensions.
+  - `ViewModels/` and `Views/` — Avalonia `.axaml` UI for configuration dialogs; assets live in `Resources/`.
+- `Artemis.Plugins.Nodes.DateTime/` contains a visual-scripting node plugin; entry points are `Bootstrapper.cs` and `DateTimeNodesProvider.cs`. Nodes live in `Nodes/` (`ConvertToDateTimeNode`, `SplitToDateTimePartsNode`).
+- Build outputs land in `<project>/bin/x64/{Debug,Release}/net10.0/` alongside `plugin.json` and (for Nanoleaf) `nanoleaf.png`.
 
 ## Build, Test, and Development Commands
 - `dotnet restore Artemis.Plugins.jonilala796.sln` — restore NuGet packages.
@@ -12,11 +18,17 @@
 - `dotnet build Artemis.Plugins.Devices.Nanoleaf/Artemis.Plugins.Devices.Nanoleaf.csproj -c Release -p:Platform=x64` — production build; output can be copied into your Artemis plugins directory.
 - Launch Artemis with the built plugin to validate device discovery and UI flows; logging is surfaced through Serilog in the host.
 
+## Key Dependencies
+- `ArtemisRGB.UI.Shared` / `ArtemisRGB.Plugins.BuildTask` — Artemis host SDK (shared by both plugins).
+- `RGB.NET.Core` — RGB device abstraction layer (Nanoleaf plugin).
+- `Zeroconf` — mDNS discovery for Matter WiFi Essentials devices (Nanoleaf plugin).
+
 ## Coding Style & Naming Conventions
-- C# 12 targeting `net10.0`; 4-space indentation, braces on new lines, and nullable reference types enabled.
-- Favor primary constructors for lightweight services (see `NanoleafDeviceProvider`), `var` for obvious types, and PascalCase for public members.
-- Keep namespaces aligned to folder paths (`Artemis.Plugins.Devices.Nanoleaf.*`) and place related views/view-models side by side.
+- Implicit C# language version (via `net10.0` TFM); no explicit `<LangVersion>` is set. 4-space indentation, braces on new lines, and nullable reference types enabled.
+- Favor primary constructors for lightweight services (see `NanoleafDeviceProvider`, `NanoleafDeviceDefinition`), `var` for obvious types, and PascalCase for public members.
+- Keep namespaces aligned to folder paths (`Artemis.Plugins.Devices.Nanoleaf.*`, `Artemis.Plugins.Nodes.DateTime.*`) and place related views/view-models side by side.
 - Asset and manifest names (`nanoleaf.png`, `plugin.json`) should stay lowercase to match existing packaging.
+- The Nanoleaf plugin distinguishes between panel-based devices (Shapes, Canvas, Lines, etc.) and Matter WiFi Essentials devices (lightstrips, bulbs). `NanoleafAPI.IsMatterEssentialsDevice()` and the model-number set drive this branching throughout `NanoleafRGBDeviceProvider` and `NanoleafRGBDevice`.
 
 ## Testing Guidelines
 - No automated test project exists yet; rely on `dotnet build` and runtime verification in Artemis.
