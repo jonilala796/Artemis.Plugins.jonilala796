@@ -4,6 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:avalonia="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:viewmodels="clr-namespace:Artemis.Plugins.Devices.Nanoleaf.ViewModels"
+             xmlns:converters="clr-namespace:Artemis.Plugins.Devices.Nanoleaf.Views.Converters"
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
              x:Class="Artemis.Plugins.Devices.Nanoleaf.Views.NanoleafConfigurationView"
              x:DataType="viewmodels:NanoleafConfigurationViewModel">
@@ -37,10 +38,15 @@
                                         Binding="{Binding Model, FallbackValue='-'}"
                                         Header="Model"
                                         IsReadOnly="True" />
-                    <DataGridTextColumn Width="*"
-                                        Binding="{Binding AuthToken, FallbackValue='-'}"
-                                        Header="AuthToken"
-                                        IsReadOnly="True" />
+                    <DataGridTemplateColumn Width="*" Header="AuthToken" IsReadOnly="True">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock VerticalAlignment="Center"
+                                           Margin="12 0"
+                                           Text="{Binding AuthToken, Converter={x:Static converters:AuthTokenMaskConverter.Instance}}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
                     <DataGridTextColumn Width="*"
                                         Binding="{Binding Brightness, FallbackValue='-'}"
                                         Header="Brightness"

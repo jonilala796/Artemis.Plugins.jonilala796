@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Threading;
 using System.Threading.Tasks;
 using Zeroconf;
 
@@ -109,6 +110,109 @@ namespace Artemis.Plugins.Devices.Nanoleaf.Helper
             }
 
             return devices;
+        }
+
+        /// <summary>
+        /// Asynchronously discovers panel-based Nanoleaf devices using SSDP, invoking a callback for each device found.
+        /// </summary>
+        /// <param name="onDeviceFound">Callback invoked on the calling thread for each device as it is discovered.</param>
+        /// <param name="cancellationToken">Token to cancel the discovery early.</param>
+        /// <param name="waitFor">The time to wait for SSDP responses in milliseconds.</param>
+        public static async Task DiscoverDevicesAsync(Action<(string address, string model)> onDeviceFound,
+            CancellationToken cancellationToken = default, int waitFor = 5000)
+        {
+            var multicastEndpoint = new IPEndPoint(IPAddress.Parse("239.255.255.250"), 1900);
+
+            using var timeoutCts = new CancellationTokenSource(waitFor);
+            using var linkedCts =
+                CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
+            using var udpClient = new UdpClient();
+            string buffer =
+                "M-SEARCH * HTTP/1.1\r\nHost: 239.255.255.250:1900\r\nST: nanoleaf_aurora:light\r\nMan: \"ssdp:all\"\r\nMX: 3\r\n\r\n";
+            byte[] data = System.Text.Encoding.UTF8.GetBytes(buffer);
+            await udpClient.SendAsync(data.AsMemory(), multicastEndpoint, linkedCts.Token);
+
+            while (!linkedCts.Token.IsCancellationRequested)
+            {
+                try
+                {
+                    var result = await udpClient.ReceiveAsync(linkedCts.Token);
+                    string response = System.Text.Encoding.UTF8.GetString(result.Buffer);
+                    var ssdpResponse = ParseSsdpResponse(response);
+
+                    if (!ssdpResponse.Headers.TryGetValue("ST", out string? st) || !st.Contains("nanoleaf") ||
+                        !ssdpResponse.Headers.TryGetValue("Location", out string? location)) continue;
+
+                    string address = new Uri(location).Host;
+                    onDeviceFound((address, st.Split(':')[1].ToUpper()));
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (SocketException)
+                {
+                    break;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Asynchronously discovers Nanoleaf Matter WiFi Essentials devices using mDNS, invoking a callback for each device found.
+        /// </summary>
+        /// <param name="onDeviceFound">Callback invoked for each device as it is discovered.</param>
+        /// <param name="cancellationToken">Token to cancel the discovery early.</param>
+        /// <param name="scanTimeSeconds">How long to scan for devices in seconds.</param>
+        public static async Task DiscoverMatterDevicesAsync(Action<(string address, string model)> onDeviceFound,
+            CancellationToken cancellationToken = default, int scanTimeSeconds = 5)
+        {
+            try
+            {
+                var seenAddresses = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                await ZeroconfResolver.ResolveAsync(
+                    "_nanoleafapi._tcp.local.",
+                    scanTime: TimeSpan.FromSeconds(scanTimeSeconds),
+                    cancellationToken: cancellationToken,
+                    callback: host =>
+                    {
+                        string address = host.IPAddress;
+                        if (!string.IsNullOrEmpty(address) && seenAddresses.Add(address))
+                            onDeviceFound((address, ExtractModelFromMdns(host)));
+                    });
+            }
+            catch
+            {
+                // mDNS is optional — swallow errors silently
+            }
+        }
+
+        /// <summary>
+        /// Asynchronously discovers all Nanoleaf devices, invoking a callback as each device is found.
+        /// SSDP and mDNS discovery run concurrently.
+        /// </summary>
+        /// <param name="onDeviceFound">Callback invoked for each unique device as it is discovered.</param>
+        /// <param name="cancellationToken">Token to cancel the discovery early.</param>
+        public static async Task DiscoverAllDevicesAsync(Action<(string address, string model)> onDeviceFound,
+            CancellationToken cancellationToken = default)
+        {
+            var seenAddresses = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            object seenLock = new();
+
+            void DeduplicatingCallback((string address, string model) device)
+            {
+                bool isNew;
+                lock (seenLock)
+                    isNew = seenAddresses.Add(device.address);
+
+                if (isNew)
+                    onDeviceFound(device);
+            }
+
+            await Task.WhenAll(
+                DiscoverDevicesAsync(DeduplicatingCallback, cancellationToken),
+                DiscoverMatterDevicesAsync(DeduplicatingCallback, cancellationToken)
+            );
         }
 
         /// <summary>

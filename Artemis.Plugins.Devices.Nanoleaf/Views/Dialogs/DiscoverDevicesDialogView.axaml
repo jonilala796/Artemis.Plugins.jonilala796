@@ -1,0 +1,65 @@
+﻿<windowing:AppWindow xmlns="https://github.com/avaloniaui"
+                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                     xmlns:controls="clr-namespace:FluentAvalonia.UI.Controls;assembly=FluentAvalonia"
+                     xmlns:windowing="clr-namespace:FluentAvalonia.UI.Windowing;assembly=FluentAvalonia"
+                     xmlns:dialogs="clr-namespace:Artemis.Plugins.Devices.Nanoleaf.ViewModels.Dialogs"
+                     mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="400"
+                     x:Class="Artemis.Plugins.Devices.Nanoleaf.Views.Dialogs.DiscoverDevicesDialogView"
+                     x:DataType="dialogs:DiscoverDevicesDialogViewModel"
+                     Title="Discover Nanoleaf Devices | Artemis"
+                     WindowStartupLocation="CenterOwner"
+                     Width="600"
+                     Height="450">
+    <Grid Margin="15" RowDefinitions="Auto,*,Auto">
+
+        <!-- Status row -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0 0 0 10">
+            <controls:ProgressRing IsVisible="{CompiledBinding IsDiscovering}"
+                                   Width="20" Height="20"
+                                   IsIndeterminate="True" />
+            <TextBlock Text="{CompiledBinding StatusMessage}"
+                       VerticalAlignment="Center"
+                       TextWrapping="Wrap" />
+        </StackPanel>
+
+        <!-- Discovered devices list -->
+        <Border Grid.Row="1" Classes="card" ClipToBounds="True">
+            <DataGrid ItemsSource="{CompiledBinding DiscoveredDevices}"
+                      AutoGenerateColumns="False"
+                      CanUserSortColumns="False"
+                      SelectionMode="Single"
+                      IsReadOnly="False"
+                      HeadersVisibility="Column">
+                <DataGrid.Columns>
+                    <DataGridCheckBoxColumn Width="50"
+                                           Binding="{Binding IsSelected}"
+                                           Header="Add"
+                                           IsReadOnly="False" />
+                    <DataGridTextColumn Width="*"
+                                       Binding="{Binding Address}"
+                                       Header="Address"
+                                       IsReadOnly="True" />
+                    <DataGridTextColumn Width="*"
+                                       Binding="{Binding Model}"
+                                       Header="Model"
+                                       IsReadOnly="True" />
+                </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+
+        <!-- Buttons -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="5" HorizontalAlignment="Right" Margin="0 15 0 0">
+            <Button Command="{CompiledBinding Retry}">
+                Retry Now
+            </Button>
+            <Button Classes="accent" Command="{CompiledBinding AddSelected}">
+                Add Selected
+            </Button>
+            <Button Command="{CompiledBinding Cancel}">
+                Cancel
+            </Button>
+        </StackPanel>
+    </Grid>
+</windowing:AppWindow>

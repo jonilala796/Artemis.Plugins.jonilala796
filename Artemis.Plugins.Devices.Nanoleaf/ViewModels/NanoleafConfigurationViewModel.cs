@@ -5,7 +5,6 @@ using System.Reactive;
 using System.Threading.Tasks;
 using Artemis.Core;
 using Artemis.Core.Services;
-using Artemis.Plugins.Devices.Nanoleaf.Helper;
 using Artemis.Plugins.Devices.Nanoleaf.RGB.NET.API;
 using Artemis.Plugins.Devices.Nanoleaf.Settings;
 using Artemis.Plugins.Devices.Nanoleaf.ViewModels.Dialogs;
@@ -97,37 +96,18 @@ public class NanoleafConfigurationViewModel : PluginConfigurationViewModel
 
     private async Task ExecuteDiscoverDevices()
     {
-        List<(string address, string model)> discoverDevices = NanoleafDiscoveryHelper.DiscoverAllDevices();
-        string message = discoverDevices.Count switch
-        {
-            0 => "No devices found",
-            1 => "1 device found",
-            _ => $"{discoverDevices.Count} devices found"
-        };
+        var devicesToAdd = await _windowService.ShowDialogAsync<DiscoverDevicesDialogViewModel, List<DeviceDefinition>>();
 
-        if (!await _windowService.ShowConfirmContentDialog("Discover devices", message, "Add devices"))
+        if (devicesToAdd == null || devicesToAdd.Count == 0)
             return;
 
-
-        //check if devices with the ip address already exist
-        foreach ((var ipAddress, string model) in discoverDevices)
+        foreach (var device in devicesToAdd)
         {
-            if ((_definitions.Value ?? []).Any(d => ipAddress.Equals(d.Hostname)))
+            if ((_definitions.Value ?? []).Any(d => device.Hostname.Equals(d.Hostname)))
                 continue;
 
-            _definitions.Value?.Add(new DeviceDefinition
-            {
-                Hostname = ipAddress,
-                Model = model,
-                Brightness = 100
-            });
-
-            DeviceDefinitions.Add(new DeviceDefinition
-            {
-                Hostname = ipAddress,
-                Model = model,
-                Brightness = 100
-            });
+            _definitions.Value?.Add(device);
+            DeviceDefinitions.Add(device);
         }
     }
 
