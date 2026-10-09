@@ -71,6 +71,7 @@ public class DiscoverDevicesDialogViewModel : DialogViewModelBase<List<DeviceDef
     {
         while (!_dialogCts.IsCancellationRequested)
         {
+            _cycleCts.Dispose();
             _cycleCts = new CancellationTokenSource();
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(_dialogCts.Token, _cycleCts.Token);
 
@@ -80,6 +81,7 @@ public class DiscoverDevicesDialogViewModel : DialogViewModelBase<List<DeviceDef
                 ? "Searching for devices..."
                 : $"Found {countAtStart} device(s). Scanning for more...";
 
+            string? error = null;
             try
             {
                 await NanoleafDiscoveryHelper.DiscoverAllDevicesAsync(OnDeviceFound, linked.Token);
@@ -88,15 +90,23 @@ public class DiscoverDevicesDialogViewModel : DialogViewModelBase<List<DeviceDef
             {
                 // Either the dialog is closing or Retry was pressed — handled below.
             }
+            catch (Exception e)
+            {
+                // Keep scanning: the network may become available again, e.g. after a Wi-Fi reconnect.
+                error = e.Message;
+            }
 
             if (_dialogCts.IsCancellationRequested)
                 break;
 
             // Pause between cycles; Retry cancels the delay so the next cycle starts immediately.
             IsDiscovering = false;
-            StatusMessage = DiscoveredDevices.Count == 0
-                ? "No devices found. Scanning again shortly..."
-                : $"Found {DiscoveredDevices.Count} device(s). Scanning again shortly...";
+            if (error != null)
+                StatusMessage = $"Discovery failed: {error}. Retrying shortly...";
+            else
+                StatusMessage = DiscoveredDevices.Count == 0
+                    ? "No devices found. Scanning again shortly..."
+                    : $"Found {DiscoveredDevices.Count} device(s). Scanning again shortly...";
 
             try
             {
@@ -109,6 +119,8 @@ public class DiscoverDevicesDialogViewModel : DialogViewModelBase<List<DeviceDef
                 // Retry was pressed — loop immediately.
             }
         }
+
+        IsDiscovering = false;
     }
 
     private void OnDeviceFound((string address, string model) device)
@@ -128,9 +140,18 @@ public class DiscoverDevicesDialogViewModel : DialogViewModelBase<List<DeviceDef
         _cycleCts.Cancel();
     }
 
+    /// <summary>
+    /// Stops discovery permanently. Called when the dialog closes, including when the window itself is closed.
+    /// </summary>
+    public void StopDiscovery()
+    {
+        if (!_dialogCts.IsCancellationRequested)
+            _dialogCts.Cancel();
+    }
+
     private void ExecuteAddSelected()
     {
-        _dialogCts.Cancel();
+        StopDiscovery();
         var result = DiscoveredDevices
             .Where(d => d.IsSelected)
             .Select(d => new DeviceDefinition { Hostname = d.Address, Model = d.Model, Brightness = 100 })
@@ -140,7 +161,7 @@ public class DiscoverDevicesDialogViewModel : DialogViewModelBase<List<DeviceDef
 
     private void ExecuteCancel()
     {
-        _dialogCts.Cancel();
+        StopDiscovery();
         Close([]);
     }
 }

@@ -2,7 +2,9 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Zeroconf;
@@ -12,154 +14,161 @@ namespace Artemis.Plugins.Devices.Nanoleaf.Helper
     /// <summary>
     /// Helper class for discovering Nanoleaf devices on the network using SSDP and mDNS.
     /// </summary>
-    public class NanoleafDiscoveryHelper
+    public static class NanoleafDiscoveryHelper
     {
-        /// <summary>
-        /// Discovers panel-based Nanoleaf devices on the network using SSDP.
-        /// </summary>
-        /// <param name="waitFor">The time to wait for responses in milliseconds.</param>
-        /// <returns>A list of tuples containing the address and model of the discovered devices.</returns>
-        public static List<(string address, string model)> DiscoverDevices(int waitFor = 5000)
-        {
-            var multicastEndpoint = new IPEndPoint(IPAddress.Parse("239.255.255.250"), 1900);
-            var localEndpoint = new IPEndPoint(IPAddress.Any, 0);
-
-            List<(string address, string model)> devices = [];
-
-            var udpClient = new UdpClient();
-
-            string buffer =
-                "M-SEARCH * HTTP/1.1\r\nHost: 239.255.255.250:1900\r\nST: nanoleaf_aurora:light\r\nMan: \"ssdp:all\"\r\nMX: 3\r\n\r\n";
-            byte[] data = System.Text.Encoding.UTF8.GetBytes(buffer);
-
-            udpClient.Send(data, data.Length, multicastEndpoint);
-            udpClient.Client.ReceiveTimeout = waitFor;
-
-            while (true)
-            {
-                try
-                {
-                    byte[] result = udpClient.Receive(ref localEndpoint);
-                    string response = System.Text.Encoding.UTF8.GetString(result);
-                    var ssdpResponse = ParseSsdpResponse(response);
-
-                    if (!ssdpResponse.Headers.TryGetValue("ST", out string? st) || !st.Contains("nanoleaf") ||
-                        !ssdpResponse.Headers.TryGetValue("Location", out string? location)) continue;
-                    string address = new Uri(location).Host;
-                    devices.Add((address, st.Split(':')[1].ToUpper()));
-                }
-                catch (SocketException)
-                {
-                    break;
-                }
-            }
-
-            return devices;
-        }
+        private static readonly IPEndPoint SsdpMulticastEndpoint = new(IPAddress.Parse("239.255.255.250"), 1900);
 
         /// <summary>
-        /// Discovers Nanoleaf Matter WiFi Essentials devices on the network using mDNS.
+        /// SSDP search targets of the panel-based devices. Every family uses its own target and only answers to
+        /// its own target or to ssdp:all.
         /// </summary>
-        /// <param name="scanTimeSeconds">How long to scan for devices in seconds.</param>
-        /// <returns>A list of tuples containing the address and model of the discovered devices.</returns>
-        public static List<(string address, string model)> DiscoverMatterDevices(int scanTimeSeconds = 5)
-        {
-            try
-            {
-                return Task.Run(async () =>
-                {
-                    var results = await ZeroconfResolver.ResolveAsync("_nanoleafapi._tcp.local.",
-                        scanTime: TimeSpan.FromSeconds(scanTimeSeconds));
-
-                    return results
-                        .Select(host => (address: host.IPAddress, model: ExtractModelFromMdns(host)))
-                        .Where(d => !string.IsNullOrEmpty(d.address))
-                        .ToList();
-                }).GetAwaiter().GetResult();
-            }
-            catch
-            {
-                return [];
-            }
-        }
-
-        /// <summary>
-        /// Discovers all Nanoleaf devices (both panel-based and Matter WiFi Essentials).
-        /// </summary>
-        /// <param name="waitFor">The time to wait for SSDP responses in milliseconds.</param>
-        /// <param name="mdnsScanTimeSeconds">How long to scan for mDNS devices in seconds.</param>
-        /// <returns>A combined list of tuples containing the address and model of the discovered devices.</returns>
-        public static List<(string address, string model)> DiscoverAllDevices(int waitFor = 5000,
-            int mdnsScanTimeSeconds = 5)
-        {
-            var devices = new List<(string address, string model)>();
-            var seenAddresses = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            // SSDP discovery for panel-based devices
-            foreach (var device in DiscoverDevices(waitFor))
-            {
-                if (seenAddresses.Add(device.address))
-                    devices.Add(device);
-            }
-
-            // mDNS discovery for Matter WiFi Essentials devices
-            foreach (var device in DiscoverMatterDevices(mdnsScanTimeSeconds))
-            {
-                if (seenAddresses.Add(device.address))
-                    devices.Add(device);
-            }
-
-            return devices;
-        }
+        private static readonly string[] SsdpSearchTargets =
+        [
+            "nanoleaf_aurora:light", // Light Panels
+            "nanoleaf:nl29", // Canvas
+            "nanoleaf:nl42", // Shapes
+            "nanoleaf:nl52", // Elements
+            "nanoleaf:nl59", // Lines
+            "ssdp:all" // Models without a known search target
+        ];
 
         /// <summary>
         /// Asynchronously discovers panel-based Nanoleaf devices using SSDP, invoking a callback for each device found.
+        /// The search is sent on every active IPv4 interface so devices behind a secondary network adapter are found too.
         /// </summary>
-        /// <param name="onDeviceFound">Callback invoked on the calling thread for each device as it is discovered.</param>
+        /// <param name="onDeviceFound">Callback invoked for each device as it is discovered.</param>
         /// <param name="cancellationToken">Token to cancel the discovery early.</param>
         /// <param name="waitFor">The time to wait for SSDP responses in milliseconds.</param>
         public static async Task DiscoverDevicesAsync(Action<(string address, string model)> onDeviceFound,
             CancellationToken cancellationToken = default, int waitFor = 5000)
         {
-            var multicastEndpoint = new IPEndPoint(IPAddress.Parse("239.255.255.250"), 1900);
-
             using var timeoutCts = new CancellationTokenSource(waitFor);
-            using var linkedCts =
-                CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 
-            using var udpClient = new UdpClient();
-            string buffer =
-                "M-SEARCH * HTTP/1.1\r\nHost: 239.255.255.250:1900\r\nST: nanoleaf_aurora:light\r\nMan: \"ssdp:all\"\r\nMX: 3\r\n\r\n";
-            byte[] data = System.Text.Encoding.UTF8.GetBytes(buffer);
-            await udpClient.SendAsync(data.AsMemory(), multicastEndpoint, linkedCts.Token);
-
-            while (!linkedCts.Token.IsCancellationRequested)
+            List<UdpClient> clients = CreateSsdpClients();
+            try
             {
-                try
-                {
-                    var result = await udpClient.ReceiveAsync(linkedCts.Token);
-                    string response = System.Text.Encoding.UTF8.GetString(result.Buffer);
-                    var ssdpResponse = ParseSsdpResponse(response);
+                await Task.WhenAll(clients.Select(c => SearchAsync(c, onDeviceFound, linkedCts.Token)));
+            }
+            finally
+            {
+                foreach (UdpClient client in clients)
+                    client.Dispose();
+            }
+        }
 
-                    if (!ssdpResponse.Headers.TryGetValue("ST", out string? st) || !st.Contains("nanoleaf") ||
-                        !ssdpResponse.Headers.TryGetValue("Location", out string? location)) continue;
+        private static async Task SearchAsync(UdpClient udpClient, Action<(string address, string model)> onDeviceFound,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                foreach (string searchTarget in SsdpSearchTargets)
+                {
+                    byte[] data = Encoding.UTF8.GetBytes(BuildSearchRequest(searchTarget));
+                    await udpClient.SendAsync(data.AsMemory(), SsdpMulticastEndpoint, cancellationToken);
+                }
 
-                    string address = new Uri(location).Host;
-                    onDeviceFound((address, st.Split(':')[1].ToUpper()));
-                }
-                catch (OperationCanceledException)
+                while (!cancellationToken.IsCancellationRequested)
                 {
-                    break;
+                    var result = await udpClient.ReceiveAsync(cancellationToken);
+                    if (TryParseSsdpDevice(Encoding.UTF8.GetString(result.Buffer), out var device))
+                        onDeviceFound(device);
                 }
-                catch (SocketException)
-                {
-                    break;
-                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Scan time elapsed or discovery was cancelled
+            }
+            catch (SocketException)
+            {
+                // The interface went away or does not support multicast; other interfaces keep searching
             }
         }
 
         /// <summary>
-        /// Asynchronously discovers Nanoleaf Matter WiFi Essentials devices using mDNS, invoking a callback for each device found.
+        /// Creates one UDP client per active IPv4 interface, or a single unbound client if none can be determined.
+        /// </summary>
+        private static List<UdpClient> CreateSsdpClients()
+        {
+            List<UdpClient> clients = [];
+            try
+            {
+                IEnumerable<IPAddress> localAddresses = NetworkInterface.GetAllNetworkInterfaces()
+                    .Where(n => n.OperationalStatus == OperationalStatus.Up
+                                && n.NetworkInterfaceType != NetworkInterfaceType.Loopback
+                                && n.SupportsMulticast)
+                    .SelectMany(n => n.GetIPProperties().UnicastAddresses)
+                    .Select(a => a.Address)
+                    .Where(a => a.AddressFamily == AddressFamily.InterNetwork);
+
+                foreach (IPAddress localAddress in localAddresses)
+                {
+                    try
+                    {
+                        clients.Add(new UdpClient(new IPEndPoint(localAddress, 0)));
+                    }
+                    catch (SocketException)
+                    {
+                        // Skip addresses that cannot be bound
+                    }
+                }
+            }
+            catch (NetworkInformationException)
+            {
+                // Fall back to the default interface below
+            }
+
+            if (clients.Count == 0)
+                clients.Add(new UdpClient());
+
+            return clients;
+        }
+
+        internal static string BuildSearchRequest(string searchTarget) =>
+            $"M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\nMX: 3\r\nST: {searchTarget}\r\n\r\n";
+
+        /// <summary>
+        /// Parses an SSDP response and extracts the address and model of a Nanoleaf device.
+        /// </summary>
+        /// <returns><c>true</c> if the response came from a Nanoleaf device; otherwise, <c>false</c>.</returns>
+        internal static bool TryParseSsdpDevice(string rawResponse, out (string address, string model) device)
+        {
+            device = default;
+            Dictionary<string, string> headers = ParseSsdpHeaders(rawResponse);
+
+            if (!headers.TryGetValue("ST", out string? st) && !headers.TryGetValue("NT", out st))
+                return false;
+            if (!st.Contains("nanoleaf", StringComparison.OrdinalIgnoreCase))
+                return false;
+            if (!headers.TryGetValue("Location", out string? location) ||
+                !Uri.TryCreate(location, UriKind.Absolute, out Uri? uri) ||
+                string.IsNullOrEmpty(uri.Host))
+                return false;
+
+            device = (uri.Host, GetModelFromSearchTarget(st));
+            return true;
+        }
+
+        /// <summary>
+        /// Gets the model number from an SSDP search target, e.g. <c>nanoleaf:nl42</c> becomes <c>NL42</c>.
+        /// </summary>
+        /// <returns>The model number, or an empty string if it is unknown.</returns>
+        internal static string GetModelFromSearchTarget(string searchTarget)
+        {
+            if (searchTarget.Equals("nanoleaf_aurora:light", StringComparison.OrdinalIgnoreCase))
+                return "NL22";
+
+            int separator = searchTarget.IndexOf(':');
+            if (separator < 0)
+                return "";
+
+            string model = searchTarget[(separator + 1)..].Trim();
+            return model.StartsWith("nl", StringComparison.OrdinalIgnoreCase) ? model.ToUpperInvariant() : "";
+        }
+
+        /// <summary>
+        /// Asynchronously discovers Nanoleaf devices using mDNS, invoking a callback for each device found.
+        /// Matter WiFi Essentials devices can only be found this way, panel-based devices advertise the service too.
         /// </summary>
         /// <param name="onDeviceFound">Callback invoked for each device as it is discovered.</param>
         /// <param name="cancellationToken">Token to cancel the discovery early.</param>
@@ -216,13 +225,11 @@ namespace Artemis.Plugins.Devices.Nanoleaf.Helper
         }
 
         /// <summary>
-        /// Extracts the model identifier from an mDNS host response.
-        /// Falls back to "MATTER_ESSENTIALS" if not found.
+        /// Extracts the model identifier from the TXT records ("md") of an mDNS host response.
         /// </summary>
+        /// <returns>The model number, or an empty string if it is unknown.</returns>
         private static string ExtractModelFromMdns(IZeroconfHost host)
         {
-            // The mDNS service instance name often contains the device name
-            // Try to extract a model from TXT records if available
             foreach (var service in host.Services.Values)
             {
                 foreach (var property in service.Properties)
@@ -232,42 +239,26 @@ namespace Artemis.Plugins.Devices.Nanoleaf.Helper
                 }
             }
 
-            return "MATTER_ESSENTIALS";
+            return "";
         }
 
         /// <summary>
-        /// Represents an SSDP response with headers.
+        /// Parses the headers of a raw SSDP response. Header names are case-insensitive.
         /// </summary>
-        private class SsdpResponse
+        private static Dictionary<string, string> ParseSsdpHeaders(string rawResponse)
         {
-            /// <summary>
-            /// Gets or sets the headers of the SSDP response.
-            /// </summary>
-            public Dictionary<string, string> Headers { get; set; } = new();
-        }
-
-        /// <summary>
-        /// Parses a raw SSDP response string into an <see cref="SsdpResponse"/> object.
-        /// </summary>
-        /// <param name="rawResponse">The raw SSDP response string.</param>
-        /// <returns>An <see cref="SsdpResponse"/> object containing the parsed headers.</returns>
-        private static SsdpResponse ParseSsdpResponse(string rawResponse)
-        {
-            var result = new SsdpResponse();
+            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             string[] lines = rawResponse.Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries);
 
+            // The first line is the status line
             for (int i = 1; i < lines.Length; i++)
             {
                 int sepIndex = lines[i].IndexOf(':');
-                if (sepIndex > -1)
-                {
-                    string headerName = lines[i].Substring(0, sepIndex).Trim();
-                    string headerValue = lines[i].Substring(sepIndex + 1).Trim();
-                    result.Headers[headerName] = headerValue;
-                }
+                if (sepIndex > 0)
+                    headers[lines[i][..sepIndex].Trim()] = lines[i][(sepIndex + 1)..].Trim();
             }
 
-            return result;
+            return headers;
         }
     }
 }

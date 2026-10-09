@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Platforms>x64</Platforms>
+        <Nullable>enable</Nullable>
+        <IsPackable>false</IsPackable>
+        <IsPublishable>false</IsPublishable>
+        <IsTestProject>true</IsTestProject>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+        <PackageReference Include="xunit" Version="2.9.3" />
+        <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+        <!-- The plugin only references these at compile time because Artemis provides them at runtime -->
+        <PackageReference Include="RGB.NET.Core" Version="3.1.0" />
+        <PackageReference Include="ArtemisRGB.UI.Shared" Version="1.2025.1223.3" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Artemis.Plugins.Devices.Nanoleaf\Artemis.Plugins.Devices.Nanoleaf.csproj" />
+    </ItemGroup>
+</Project>

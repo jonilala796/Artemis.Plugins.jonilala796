@@ -16,7 +16,7 @@ internal static class EnumExtension
     /// </summary>
     /// <param name="source">The enum value to get the attribute from</param>
     /// <returns>The value of the <see cref="SideLengthAttribute"/> of the source.</returns>
-    internal static float? GetSideLength(this System.Enum source) => source.GetAttribute<SideLengthAttribute>()?.SideLength ?? 0;
+    internal static float? GetSideLength(this System.Enum source) => source.GetAttribute<SideLengthAttribute>()?.SideLength;
     
     internal static Shape? GetShape(this System.Enum source) => source.GetAttribute<ShapeAttribute>()?.Shape;
     

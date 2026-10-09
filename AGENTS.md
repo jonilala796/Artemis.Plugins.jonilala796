@@ -3,10 +3,10 @@
 ## Project Structure & Modules
 - `Artemis.Plugins.Devices.Nanoleaf/` contains the Nanoleaf device plugin; core entry points are `NanoleafBootstrapper.cs` and `NanoleafDeviceProvider.cs`.
   - `Helper/` — network discovery (`NanoleafDiscoveryHelper.cs`: SSDP for panel devices, mDNS/Zeroconf for Matter WiFi Essentials).
-  - `Settings/` — persisted device definitions (`DeviceDefinition.cs`, `PendingRestoreState.cs`).
+  - `Settings/` — persisted device definitions (`DeviceDefinition.cs`) and the original state of controlled devices (`PendingRestoreState.cs`, stored by `PendingRestoreStateStore.cs`) so it can be restored after an unclean shutdown.
   - `RGB.NET/` — device abstractions and Nanoleaf REST client:
     - `API/` — `NanoleafAPI.cs` (REST client wrapping the Nanoleaf Open API on port 16021) and `NanoleafInfo.cs` (response models).
-    - `Generic/` — `INanoleafDeviceDefinition`, `NanoleafRGBDevice`, `NanoleafDeviceUpdateQueue` (RGB.NET integration layer).
+    - `Generic/` — `INanoleafDeviceDefinition`, `NanoleafRGBDevice`, `NanoleafRGBDeviceInfo` (Matter detection, ext-control version, streamable panels), `NanoleafDeviceUpdateQueue` (UDP streaming), `IPendingRestoreStateStore` (RGB.NET integration layer).
     - `Attributes/`, `Enum/`, `Helper/` — shape/ext-control metadata and enum extensions.
   - `ViewModels/` and `Views/` — Avalonia `.axaml` UI for configuration dialogs; assets live in `Resources/`.
 - `Artemis.Plugins.Nodes.DateTime/` contains a visual-scripting node plugin; entry points are `Bootstrapper.cs` and `DateTimeNodesProvider.cs`. Nodes live in `Nodes/` (`ConvertToDateTimeNode`, `SplitToDateTimePartsNode`).
@@ -31,8 +31,9 @@
 - The Nanoleaf plugin distinguishes between panel-based devices (Shapes, Canvas, Lines, etc.) and Matter WiFi Essentials devices (lightstrips, bulbs). `NanoleafAPI.IsMatterEssentialsDevice()` and the model-number set drive this branching throughout `NanoleafRGBDeviceProvider` and `NanoleafRGBDevice`.
 
 ## Testing Guidelines
-- No automated test project exists yet; rely on `dotnet build` and runtime verification in Artemis.
-- When adding tests, prefer xUnit with project names ending in `.Tests`, and mirror source namespaces for fixture placement.
+- `Artemis.Plugins.Devices.Nanoleaf.Tests/` (xUnit) covers the pure logic: stream packet building, SSDP parsing, ext-control version and Matter detection, restore state. Run `dotnet test Artemis.Plugins.jonilala796.sln -p:Platform=x64`.
+- Device communication still needs runtime verification in Artemis.
+- When adding tests, prefer xUnit with project names ending in `.Tests`, and mirror source namespaces for fixture placement. Internals are visible to the test project.
 - Manual checks: confirm Nanoleaf discovery succeeds on first load, brightness settings apply, and configuration dialogs open without binding errors.
 
 ## Commit & Pull Request Guidelines
@@ -42,4 +43,5 @@
 
 ## Security & Configuration Tips
 - Never commit Nanoleaf auth tokens or local IPs; rely on user-provided settings stored by Artemis.
-- Validate network operations defensively (ping checks already present); log warnings rather than exceptions for unreachable devices to avoid crashing the host.
+- Validate network operations defensively (reachability checks on the API port with ping fallback already present); log warnings rather than exceptions for unreachable devices to avoid crashing the host.
+- `NanoleafAPI` uses one shared `HttpClient` with short timeouts and logs failures without the request URI, because the auth token is part of the path.

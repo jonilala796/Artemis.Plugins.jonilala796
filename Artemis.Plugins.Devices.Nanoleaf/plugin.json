@@ -1,9 +1,9 @@
 {
     "Guid": "2D67229F-D5A9-4EC0-B188-9EC608FA387A",
     "Name": "Nanoleaf Devices",
-    "Description": "Allows Artemis to control lighting on all Nanoleaf products",
+    "Description": "Allows Artemis to control lighting on Nanoleaf panel products (Light Panels, Canvas, Shapes, Elements, Lines, Skylight) and Matter WiFi Essentials devices",
     "Author": "jonilala796",
-    "Repository": "https://github.com/jonilala796/Artemis.Plugins.Devices.Nanoleaf",
+    "Repository": "https://github.com/jonilala796/Artemis.Plugins.jonilala796",
     "Icon": "nanoleaf.png",
     "Version": "2.2.1",
     "Main": "Artemis.Plugins.Devices.Nanoleaf.dll",

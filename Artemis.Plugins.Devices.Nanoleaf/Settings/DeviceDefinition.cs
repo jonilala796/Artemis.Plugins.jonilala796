@@ -28,7 +28,7 @@ public class DeviceDefinition : CorePropertyChanged
         set => SetAndNotify(ref _authToken, value);
     }
     
-    private byte _brightness;
+    private byte _brightness = 100;
     public byte Brightness
     {
         get => _brightness;

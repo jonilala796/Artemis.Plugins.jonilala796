@@ -1,7 +1,6 @@
-﻿using System.Collections.Generic;
+﻿using System;
 using System.Reactive;
 using System.Threading.Tasks;
-using Artemis.Core;
 using Artemis.Plugins.Devices.Nanoleaf.Settings;
 using Artemis.UI.Shared;
 using Artemis.UI.Shared.Services;
@@ -14,9 +13,7 @@ public class
     DeviceConfigurationDialogViewModel : DialogViewModelBase<DeviceDialogResult>
 {
     private readonly DeviceDefinition _device;
-    private readonly PluginSettings _settings;
     private readonly IWindowService _windowService;
-    private bool _hasChanges;
 
     public DeviceDefinition Device { get; }
 
@@ -55,36 +52,41 @@ public class
     public ReactiveCommand<Unit, Unit> Cancel { get; }
     public ReactiveCommand<Unit, Unit> RemoveDevice { get; }
 
-    public DeviceConfigurationDialogViewModel(DeviceDefinition device, PluginSettings settings,
-        IWindowService windowService)
+    public DeviceConfigurationDialogViewModel(DeviceDefinition device, IWindowService windowService)
     {
         _device = device;
         Device = device;
-        _settings = settings;
         _windowService = windowService;
 
         _hostname = device.Hostname;
         _model = device.Model;
         _authToken = device.AuthToken;
-        _brightness = device.Brightness;
+        // 0 is the default of devices added before brightness could be configured and means full brightness
+        _brightness = device.Brightness > 0 ? device.Brightness : (byte)100;
 
-        this.ValidationRule(vm => vm.Hostname, s => !string.IsNullOrWhiteSpace(s), "A Hostname is required");
+        this.ValidationRule(vm => vm.Hostname, IsValidHostname, "A valid IP address or hostname is required");
 
         Save = ReactiveCommand.Create(ExecuteSave, ValidationContext.Valid);
         Cancel = ReactiveCommand.CreateFromTask(ExecuteCancel);
         RemoveDevice = ReactiveCommand.CreateFromTask(ExecuteRemoveDevice);
-
-        PropertyChanged += (_, _) => _hasChanges = true;
     }
+
+    private bool HasChanges => Hostname != _device.Hostname ||
+                               Model != _device.Model ||
+                               AuthToken != _device.AuthToken ||
+                               Brightness != (_device.Brightness > 0 ? _device.Brightness : 100);
+
+    private static bool IsValidHostname(string? hostname) =>
+        !string.IsNullOrWhiteSpace(hostname) && Uri.CheckHostName(hostname.Trim()) != UriHostNameType.Unknown;
 
     private void ExecuteSave()
     {
         if (HasErrors)
             return;
 
-        _device.Hostname = Hostname;
+        _device.Hostname = Hostname.Trim();
         _device.Model = Model;
-        _device.AuthToken = AuthToken;
+        _device.AuthToken = AuthToken.Trim();
         _device.Brightness = Brightness;
 
         Close(DeviceDialogResult.Save);
@@ -92,7 +94,7 @@ public class
 
     private async Task ExecuteCancel()
     {
-        if (_hasChanges)
+        if (HasChanges)
         {
             bool confirmed = await _windowService.ShowConfirmContentDialog("Discard changes?",
                 "Are you sure you want to discard your changes?");
@@ -110,9 +112,6 @@ public class
         if (!confirmed)
             return;
 
-        PluginSetting<List<DeviceDefinition>> definitions =
-            _settings.GetSetting("DeviceDefinitions", new List<DeviceDefinition>());
-        definitions.Value?.Remove(_device);
         Close(DeviceDialogResult.Remove);
     }
 
