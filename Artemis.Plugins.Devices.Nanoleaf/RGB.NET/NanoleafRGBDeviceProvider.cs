@@ -19,7 +19,16 @@ public class NanoleafRGBDeviceProvider : AbstractRGBDeviceProvider
 {
     #region Constants
 
-    private const int HEARTBEAT_TIMER = 100;
+    /// <summary>
+    /// Matter devices leave external control mode after about 1.5 s without data, so resend often.
+    /// </summary>
+    private const int MATTER_HEARTBEAT_TIMER = 100;
+
+    /// <summary>
+    /// Panel devices stay in external control mode without data. Resending is only needed to repair lost
+    /// packets, and frequent full frames make panels at the end of the chain flash on some layouts.
+    /// </summary>
+    private const int PANEL_HEARTBEAT_TIMER = 1000;
 
     private const string EXT_CONTROL_EFFECT = "*ExtControl*";
 
@@ -255,6 +264,9 @@ public class NanoleafRGBDeviceProvider : AbstractRGBDeviceProvider
         }
 
         var (streamAddress, streamPort) = stream.Value;
+
+        if (updateTrigger is DeviceUpdateTrigger deviceUpdateTrigger)
+            deviceUpdateTrigger.HeartbeatTimer = isMatter ? MATTER_HEARTBEAT_TIMER : PANEL_HEARTBEAT_TIMER;
         try
         {
             if (isMatter)
@@ -365,7 +377,7 @@ public class NanoleafRGBDeviceProvider : AbstractRGBDeviceProvider
     private void OnStreamError(Exception exception) => Throw(exception);
 
     protected override IDeviceUpdateTrigger CreateUpdateTrigger(int id, double updateRateHardLimit) =>
-        new DeviceUpdateTrigger(updateRateHardLimit) { HeartbeatTimer = HEARTBEAT_TIMER };
+        new DeviceUpdateTrigger(updateRateHardLimit) { HeartbeatTimer = MATTER_HEARTBEAT_TIMER };
 
     #endregion
 }

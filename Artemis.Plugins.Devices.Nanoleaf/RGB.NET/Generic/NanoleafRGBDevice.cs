@@ -20,7 +20,8 @@ public sealed class NanoleafRGBDevice : AbstractRGBDevice<NanoleafRGBDeviceInfo>
                 deviceInfo.StreamablePanels.Count,
                 deviceInfo.ExtControlVersion,
                 deviceInfo.LedIdToIndex,
-                onError))
+                onError,
+                partialFrames: true))
     {
         InitializeLayout();
     }
@@ -34,7 +35,8 @@ public sealed class NanoleafRGBDevice : AbstractRGBDevice<NanoleafRGBDeviceInfo>
             new NanoleafDeviceUpdateQueue(updateTrigger, address, port, ledCount,
                 ExtControlVersion.v2,
                 deviceInfo.LedIdToIndex,
-                onError))
+                onError,
+                partialFrames: false))
     {
         InitializeMatterLayout(ledCount);
     }

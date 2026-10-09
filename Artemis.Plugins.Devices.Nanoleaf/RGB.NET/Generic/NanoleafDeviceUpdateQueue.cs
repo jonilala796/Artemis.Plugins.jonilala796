@@ -22,14 +22,26 @@ internal sealed class NanoleafDeviceUpdateQueue : UpdateQueue
     private readonly UdpClient _socket;
 
     /// <summary>
-    /// The buffer the UDP-data is stored in.
+    /// The full current frame containing every panel. Sent by the heartbeat and by devices without partial frames.
     /// </summary>
     private readonly byte[] _buffer;
+
+    /// <summary>
+    /// The buffer partial frames containing only the changed panels are written to.
+    /// </summary>
+    private readonly byte[] _partialBuffer;
+
+    /// <summary>
+    /// Whether only changed panels are sent. Panels that are not part of a packet keep their color, so this
+    /// keeps the traffic on the device's panel chain low.
+    /// </summary>
+    private readonly bool _partialFrames;
 
     private readonly ExtControlVersion _version;
     private readonly Dictionary<LedId, int> _deviceInfoLedIdToIndex;
     private readonly Action<Exception> _onError;
     private volatile bool _disposed;
+    private bool _frameInitialized;
 
     #endregion
 
@@ -45,15 +57,19 @@ internal sealed class NanoleafDeviceUpdateQueue : UpdateQueue
     /// <param name="version">The external control protocol version.</param>
     /// <param name="deviceInfoLedIdToIndex">The mapping of LED id to panel id or LED index.</param>
     /// <param name="onError">Callback invoked when sending fails.</param>
+    /// <param name="partialFrames">Whether to send only changed panels instead of the full frame on every update.</param>
     public NanoleafDeviceUpdateQueue(IDeviceUpdateTrigger updateTrigger, string address, int port, int ledCount,
-        ExtControlVersion version, Dictionary<LedId, int> deviceInfoLedIdToIndex, Action<Exception> onError)
+        ExtControlVersion version, Dictionary<LedId, int> deviceInfoLedIdToIndex, Action<Exception> onError,
+        bool partialFrames)
         : base(updateTrigger)
     {
         _version = version;
         _deviceInfoLedIdToIndex = deviceInfoLedIdToIndex;
         _onError = onError;
+        _partialFrames = partialFrames;
 
         _buffer = new byte[GetPacketLength(version, ledCount)];
+        _partialBuffer = partialFrames ? new byte[_buffer.Length] : [];
         WriteHeader(_buffer, version, ledCount);
 
         try
@@ -83,9 +99,18 @@ internal sealed class NanoleafDeviceUpdateQueue : UpdateQueue
 
         try
         {
-            // The heartbeat resends the last frame so the device stays in external control mode.
+            // The LED mapping is filled after the queue is created, so address every panel on the first update.
+            // Otherwise panels whose color never changes would not be part of the full frame.
+            if (!_frameInitialized && _deviceInfoLedIdToIndex.Count > 0)
+            {
+                InitializeFrame(_buffer, _version, _deviceInfoLedIdToIndex);
+                _frameInitialized = true;
+            }
+
+            // The heartbeat resends the full last frame so the device stays in external control mode
+            // and panels recover from a lost packet.
             if (customData[CustomUpdateDataIndex.HEARTBEAT] as bool? ?? false)
-                Update(Array.Empty<(object key, Color color)>());
+                _socket.Send(_buffer);
             else
                 base.OnUpdate(sender, customData);
         }
@@ -104,7 +129,16 @@ internal sealed class NanoleafDeviceUpdateQueue : UpdateQueue
         try
         {
             WriteEntries(_buffer, _version, dataSet, _deviceInfoLedIdToIndex);
-            _socket.Send(_buffer);
+
+            if (!_partialFrames)
+            {
+                _socket.Send(_buffer);
+                return true;
+            }
+
+            int length = WritePartialPacket(_partialBuffer, _version, dataSet, _deviceInfoLedIdToIndex);
+            if (length > 0)
+                _socket.Send(_partialBuffer.AsSpan(0, length));
             return true;
         }
         catch (Exception ex)
@@ -159,27 +193,77 @@ internal sealed class NanoleafDeviceUpdateQueue : UpdateQueue
             if (slot < 0 || offset + entryLength > buffer.Length)
                 continue;
 
-            if (version == ExtControlVersion.v1)
-            {
-                buffer[offset] = (byte)panelId;
-                buffer[offset + 1] = 1; // Number of frames, always 1
-                buffer[offset + 2] = color.GetR();
-                buffer[offset + 3] = color.GetG();
-                buffer[offset + 4] = color.GetB();
-                buffer[offset + 5] = 0; // White LED element, currently ignored
-                buffer[offset + 6] = 0; // transitionTime
-            }
-            else
-            {
-                buffer[offset] = (byte)(panelId >> 8); // panelId high byte
-                buffer[offset + 1] = (byte)(panelId & 0xFF); // panelId low byte
-                buffer[offset + 2] = color.GetR();
-                buffer[offset + 3] = color.GetG();
-                buffer[offset + 4] = color.GetB();
-                buffer[offset + 5] = 0; // White LED element, currently ignored
-                buffer[offset + 6] = 0; // transitionTime high byte
-                buffer[offset + 7] = 0; // transitionTime low byte
-            }
+            WriteEntry(buffer.Slice(offset, entryLength), version, panelId, color);
+        }
+    }
+
+    /// <summary>
+    /// Writes every panel of the device into the full frame, black.
+    /// </summary>
+    internal static void InitializeFrame(Span<byte> buffer, ExtControlVersion version,
+        IReadOnlyDictionary<LedId, int> ledIdToIndex)
+    {
+        (object key, Color color)[] dataSet = new (object key, Color color)[ledIdToIndex.Count];
+        int i = 0;
+        foreach (LedId ledId in ledIdToIndex.Keys)
+            dataSet[i++] = (ledId, new Color(0, 0, 0));
+
+        WriteEntries(buffer, version, dataSet, ledIdToIndex);
+    }
+
+    /// <summary>
+    /// Writes a packet containing only the panels of <paramref name="dataSet"/>, one after another.
+    /// </summary>
+    /// <returns>The length of the packet, or 0 if no panel of the data set is part of the device.</returns>
+    internal static int WritePartialPacket(Span<byte> buffer, ExtControlVersion version,
+        ReadOnlySpan<(object key, Color color)> dataSet, IReadOnlyDictionary<LedId, int> ledIdToIndex)
+    {
+        int headerLength = version == ExtControlVersion.v1 ? 1 : 2;
+        int entryLength = version == ExtControlVersion.v1 ? 7 : 8;
+
+        int count = 0;
+        foreach ((object key, Color color) in dataSet)
+        {
+            if (key is not LedId ledId || !ledIdToIndex.TryGetValue(ledId, out int panelId))
+                continue;
+
+            int offset = headerLength + count * entryLength;
+            if (offset + entryLength > buffer.Length)
+                break;
+
+            WriteEntry(buffer.Slice(offset, entryLength), version, panelId, color);
+            count++;
+        }
+
+        if (count == 0)
+            return 0;
+
+        WriteHeader(buffer, version, count);
+        return headerLength + count * entryLength;
+    }
+
+    private static void WriteEntry(Span<byte> entry, ExtControlVersion version, int panelId, Color color)
+    {
+        if (version == ExtControlVersion.v1)
+        {
+            entry[0] = (byte)panelId;
+            entry[1] = 1; // Number of frames, always 1
+            entry[2] = color.GetR();
+            entry[3] = color.GetG();
+            entry[4] = color.GetB();
+            entry[5] = 0; // White LED element, currently ignored
+            entry[6] = 0; // transitionTime
+        }
+        else
+        {
+            entry[0] = (byte)(panelId >> 8); // panelId high byte
+            entry[1] = (byte)(panelId & 0xFF); // panelId low byte
+            entry[2] = color.GetR();
+            entry[3] = color.GetG();
+            entry[4] = color.GetB();
+            entry[5] = 0; // White LED element, currently ignored
+            entry[6] = 0; // transitionTime high byte
+            entry[7] = 0; // transitionTime low byte
         }
     }
 
