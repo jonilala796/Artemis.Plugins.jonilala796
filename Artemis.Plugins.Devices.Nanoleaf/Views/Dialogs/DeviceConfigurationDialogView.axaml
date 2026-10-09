@@ -35,6 +35,26 @@
                     <Slider Minimum="1" Maximum="100" Value="{Binding Brightness}" TickFrequency="1"
                             IsSnapToTickEnabled="True" Grid.Column="1" HorizontalAlignment="Stretch" />
                 </Grid>
+
+                <Label>Transition time (x 100 ms)</Label>
+                <Grid Margin="0 0 0 5" ColumnDefinitions="Auto,*">
+                    <Label Content="{Binding TransitionTime}" VerticalAlignment="Center" Margin="0 0 10 0" Grid.Column="0" />
+                    <Slider Minimum="0" Maximum="10" Value="{Binding TransitionTime}" TickFrequency="1"
+                            IsSnapToTickEnabled="True" Grid.Column="1" HorizontalAlignment="Stretch" />
+                </Grid>
+                <TextBlock Classes="subtitle" TextWrapping="Wrap">
+                    Fade between colors on the device. 0 changes colors instantly. Try 1 if panels flicker.
+                </TextBlock>
+
+                <Label>Max updates per second</Label>
+                <Grid Margin="0 0 0 5" ColumnDefinitions="Auto,*">
+                    <Label Content="{Binding MaxUpdateRate}" VerticalAlignment="Center" Margin="0 0 10 0" Grid.Column="0" />
+                    <Slider Minimum="0" Maximum="60" Value="{Binding MaxUpdateRate}" TickFrequency="1"
+                            IsSnapToTickEnabled="True" Grid.Column="1" HorizontalAlignment="Stretch" />
+                </Grid>
+                <TextBlock Classes="subtitle" TextWrapping="Wrap">
+                    0 means unlimited. Lower values reduce the load on the device.
+                </TextBlock>
             </StackPanel>
         </Border>
 

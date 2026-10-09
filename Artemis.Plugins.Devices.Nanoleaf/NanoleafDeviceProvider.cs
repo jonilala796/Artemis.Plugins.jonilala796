@@ -87,7 +87,8 @@ public class NanoleafDeviceProvider(ILogger logger, IDeviceService deviceService
                 continue;
             }
 
-            _rgbDeviceProvider.DeviceDefinitions.Add(new NanoleafDeviceDefinition(device.Hostname.Trim(), device.AuthToken, device.Brightness));
+            _rgbDeviceProvider.DeviceDefinitions.Add(new NanoleafDeviceDefinition(device.Hostname.Trim(), device.AuthToken,
+                device.Brightness, device.TransitionTime, device.MaxUpdateRate));
             added++;
         }
 

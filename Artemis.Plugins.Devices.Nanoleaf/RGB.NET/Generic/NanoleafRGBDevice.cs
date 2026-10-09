@@ -14,14 +14,15 @@ public sealed class NanoleafRGBDevice : AbstractRGBDevice<NanoleafRGBDeviceInfo>
     /// Creates a panel-based Nanoleaf device (Shapes, Canvas, Elements, Lines, Skylight, etc.).
     /// </summary>
     internal NanoleafRGBDevice(NanoleafRGBDeviceInfo deviceInfo, string address, ushort port,
-        IDeviceUpdateTrigger updateTrigger, Action<Exception> onError)
+        IDeviceUpdateTrigger updateTrigger, Action<Exception> onError, ushort transitionTime)
         : base(deviceInfo,
             new NanoleafDeviceUpdateQueue(updateTrigger, address, port,
                 deviceInfo.StreamablePanels.Count,
                 deviceInfo.ExtControlVersion,
                 deviceInfo.LedIdToIndex,
                 onError,
-                partialFrames: true))
+                partialFrames: true,
+                transitionTime))
     {
         InitializeLayout();
     }
@@ -30,13 +31,14 @@ public sealed class NanoleafRGBDevice : AbstractRGBDevice<NanoleafRGBDeviceInfo>
     /// Creates a Matter WiFi Essentials device with LED-indexed addressing.
     /// </summary>
     internal NanoleafRGBDevice(NanoleafRGBDeviceInfo deviceInfo, string address, ushort port,
-        int ledCount, IDeviceUpdateTrigger updateTrigger, Action<Exception> onError)
+        int ledCount, IDeviceUpdateTrigger updateTrigger, Action<Exception> onError, ushort transitionTime)
         : base(deviceInfo,
             new NanoleafDeviceUpdateQueue(updateTrigger, address, port, ledCount,
                 ExtControlVersion.v2,
                 deviceInfo.LedIdToIndex,
                 onError,
-                partialFrames: false))
+                partialFrames: false,
+                transitionTime))
     {
         InitializeMatterLayout(ledCount);
     }

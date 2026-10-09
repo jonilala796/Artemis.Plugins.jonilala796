@@ -266,19 +266,36 @@ public class NanoleafRGBDeviceProvider : AbstractRGBDeviceProvider
         var (streamAddress, streamPort) = stream.Value;
 
         if (updateTrigger is DeviceUpdateTrigger deviceUpdateTrigger)
+        {
             deviceUpdateTrigger.HeartbeatTimer = isMatter ? MATTER_HEARTBEAT_TIMER : PANEL_HEARTBEAT_TIMER;
+            if (deviceDefinition.MaxUpdateRate > 0)
+                deviceUpdateTrigger.MaxUpdateRate = deviceDefinition.MaxUpdateRate;
+        }
+
+        ushort transitionTime = deviceDefinition.TransitionTime;
         try
         {
+            NanoleafRGBDevice device;
             if (isMatter)
             {
-                Logger?.Information("Connected to Nanoleaf device '{name}' ({model}) at {address} [{ledCount} LED(s)]",
-                    nanoleafInfo.Name, nanoleafInfo.Model, address, ledCount);
-                return new NanoleafRGBDevice(deviceInfo, streamAddress, streamPort, ledCount, updateTrigger, OnStreamError);
+                device = new NanoleafRGBDevice(deviceInfo, streamAddress, streamPort, ledCount, updateTrigger,
+                    OnStreamError, transitionTime);
+                Logger?.Information("Connected to Nanoleaf device '{name}' ({model}, firmware {firmware}) at {address} " +
+                                    "[{ledCount} LED(s), transition {transition}x100 ms, max rate {maxRate}/s]",
+                    nanoleafInfo.Name, nanoleafInfo.Model, nanoleafInfo.FirmwareVersion, address, ledCount,
+                    transitionTime, deviceDefinition.MaxUpdateRate);
+                return device;
             }
 
-            Logger?.Information("Connected to Nanoleaf device '{name}' ({model}) at {address} [{panelCount} panel(s)]",
-                nanoleafInfo.Name, nanoleafInfo.Model, address, deviceInfo.StreamablePanels.Count);
-            return new NanoleafRGBDevice(deviceInfo, streamAddress, streamPort, updateTrigger, OnStreamError);
+            device = new NanoleafRGBDevice(deviceInfo, streamAddress, streamPort, updateTrigger, OnStreamError,
+                transitionTime);
+            Logger?.Information("Connected to Nanoleaf device '{name}' ({model}, firmware {firmware}) at {address} " +
+                                "[{panelCount} panel(s), ext control {version}, transition {transition}x100 ms, max rate {maxRate}/s]",
+                nanoleafInfo.Name, nanoleafInfo.Model, nanoleafInfo.FirmwareVersion, address,
+                deviceInfo.StreamablePanels.Count, deviceInfo.ExtControlVersion, transitionTime,
+                deviceDefinition.MaxUpdateRate);
+            LogPanelLayout(device, address);
+            return device;
         }
         catch (Exception e)
         {
@@ -372,6 +389,25 @@ public class NanoleafRGBDeviceProvider : AbstractRGBDeviceProvider
             success &= NanoleafAPI.SetOnOff(address, authToken, true);
 
         return success;
+    }
+
+    /// <summary>
+    /// Logs every streamed panel, so a misbehaving panel can be matched to its id and shape type.
+    /// </summary>
+    private void LogPanelLayout(NanoleafRGBDevice device, string address)
+    {
+        if (Logger == null)
+            return;
+
+        ILookup<int, LedId> ledIdsByPanelId = device.DeviceInfo.LedIdToIndex.ToLookup(kvp => kvp.Value, kvp => kvp.Key);
+        foreach (NanoleafInfo.PositionDataInfo panel in device.DeviceInfo.StreamablePanels)
+        {
+            Logger.Information("Nanoleaf {address} panel {panelId}: shape {shapeType}, x {x}, y {y}, orientation {orientation}, LED {ledIds}",
+                address, panel.PanelId, panel.ShapeType, panel.X, panel.Y, panel.O, string.Join(", ", ledIdsByPanelId[panel.PanelId]));
+        }
+
+        foreach (IGrouping<int, LedId> duplicate in ledIdsByPanelId.Where(g => g.Count() > 1))
+            Logger.Warning("Nanoleaf {address} panel {panelId} appears {count} times in the layout", address, duplicate.Key, duplicate.Count());
     }
 
     private void OnStreamError(Exception exception) => Throw(exception);

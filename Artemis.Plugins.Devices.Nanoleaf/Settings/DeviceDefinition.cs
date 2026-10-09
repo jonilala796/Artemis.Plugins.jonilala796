@@ -34,4 +34,26 @@ public class DeviceDefinition : CorePropertyChanged
         get => _brightness;
         set => SetAndNotify(ref _brightness, value);
     }
+
+    private byte _transitionTime;
+
+    /// <summary>
+    /// Fade time between colors in steps of 100 ms. 0 changes colors instantly.
+    /// </summary>
+    public byte TransitionTime
+    {
+        get => _transitionTime;
+        set => SetAndNotify(ref _transitionTime, value);
+    }
+
+    private int _maxUpdateRate;
+
+    /// <summary>
+    /// Maximum number of updates per second sent to the device. 0 means unlimited.
+    /// </summary>
+    public int MaxUpdateRate
+    {
+        get => _maxUpdateRate;
+        set => SetAndNotify(ref _maxUpdateRate, value);
+    }
 }

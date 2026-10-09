@@ -37,6 +37,11 @@ internal sealed class NanoleafDeviceUpdateQueue : UpdateQueue
     /// </summary>
     private readonly bool _partialFrames;
 
+    /// <summary>
+    /// Fade time the device applies between colors, in steps of 100 ms.
+    /// </summary>
+    private readonly ushort _transitionTime;
+
     private readonly ExtControlVersion _version;
     private readonly Dictionary<LedId, int> _deviceInfoLedIdToIndex;
     private readonly Action<Exception> _onError;
@@ -58,11 +63,13 @@ internal sealed class NanoleafDeviceUpdateQueue : UpdateQueue
     /// <param name="deviceInfoLedIdToIndex">The mapping of LED id to panel id or LED index.</param>
     /// <param name="onError">Callback invoked when sending fails.</param>
     /// <param name="partialFrames">Whether to send only changed panels instead of the full frame on every update.</param>
+    /// <param name="transitionTime">Fade time the device applies between colors, in steps of 100 ms.</param>
     public NanoleafDeviceUpdateQueue(IDeviceUpdateTrigger updateTrigger, string address, int port, int ledCount,
         ExtControlVersion version, Dictionary<LedId, int> deviceInfoLedIdToIndex, Action<Exception> onError,
-        bool partialFrames)
+        bool partialFrames, ushort transitionTime)
         : base(updateTrigger)
     {
+        _transitionTime = transitionTime;
         _version = version;
         _deviceInfoLedIdToIndex = deviceInfoLedIdToIndex;
         _onError = onError;
@@ -103,7 +110,7 @@ internal sealed class NanoleafDeviceUpdateQueue : UpdateQueue
             // Otherwise panels whose color never changes would not be part of the full frame.
             if (!_frameInitialized && _deviceInfoLedIdToIndex.Count > 0)
             {
-                InitializeFrame(_buffer, _version, _deviceInfoLedIdToIndex);
+                InitializeFrame(_buffer, _version, _deviceInfoLedIdToIndex, _transitionTime);
                 _frameInitialized = true;
             }
 
@@ -128,7 +135,7 @@ internal sealed class NanoleafDeviceUpdateQueue : UpdateQueue
 
         try
         {
-            WriteEntries(_buffer, _version, dataSet, _deviceInfoLedIdToIndex);
+            WriteEntries(_buffer, _version, dataSet, _deviceInfoLedIdToIndex, _transitionTime);
 
             if (!_partialFrames)
             {
@@ -136,7 +143,7 @@ internal sealed class NanoleafDeviceUpdateQueue : UpdateQueue
                 return true;
             }
 
-            int length = WritePartialPacket(_partialBuffer, _version, dataSet, _deviceInfoLedIdToIndex);
+            int length = WritePartialPacket(_partialBuffer, _version, dataSet, _deviceInfoLedIdToIndex, _transitionTime);
             if (length > 0)
                 _socket.Send(_partialBuffer.AsSpan(0, length));
             return true;
@@ -178,7 +185,8 @@ internal sealed class NanoleafDeviceUpdateQueue : UpdateQueue
     /// its <see cref="LedId"/>, so entries that are not part of the data set keep their last color.
     /// </summary>
     internal static void WriteEntries(Span<byte> buffer, ExtControlVersion version,
-        ReadOnlySpan<(object key, Color color)> dataSet, IReadOnlyDictionary<LedId, int> ledIdToIndex)
+        ReadOnlySpan<(object key, Color color)> dataSet, IReadOnlyDictionary<LedId, int> ledIdToIndex,
+        ushort transitionTime = 0)
     {
         int headerLength = version == ExtControlVersion.v1 ? 1 : 2;
         int entryLength = version == ExtControlVersion.v1 ? 7 : 8;
@@ -193,7 +201,7 @@ internal sealed class NanoleafDeviceUpdateQueue : UpdateQueue
             if (slot < 0 || offset + entryLength > buffer.Length)
                 continue;
 
-            WriteEntry(buffer.Slice(offset, entryLength), version, panelId, color);
+            WriteEntry(buffer.Slice(offset, entryLength), version, panelId, color, transitionTime);
         }
     }
 
@@ -201,14 +209,14 @@ internal sealed class NanoleafDeviceUpdateQueue : UpdateQueue
     /// Writes every panel of the device into the full frame, black.
     /// </summary>
     internal static void InitializeFrame(Span<byte> buffer, ExtControlVersion version,
-        IReadOnlyDictionary<LedId, int> ledIdToIndex)
+        IReadOnlyDictionary<LedId, int> ledIdToIndex, ushort transitionTime = 0)
     {
         (object key, Color color)[] dataSet = new (object key, Color color)[ledIdToIndex.Count];
         int i = 0;
         foreach (LedId ledId in ledIdToIndex.Keys)
             dataSet[i++] = (ledId, new Color(0, 0, 0));
 
-        WriteEntries(buffer, version, dataSet, ledIdToIndex);
+        WriteEntries(buffer, version, dataSet, ledIdToIndex, transitionTime);
     }
 
     /// <summary>
@@ -216,7 +224,8 @@ internal sealed class NanoleafDeviceUpdateQueue : UpdateQueue
     /// </summary>
     /// <returns>The length of the packet, or 0 if no panel of the data set is part of the device.</returns>
     internal static int WritePartialPacket(Span<byte> buffer, ExtControlVersion version,
-        ReadOnlySpan<(object key, Color color)> dataSet, IReadOnlyDictionary<LedId, int> ledIdToIndex)
+        ReadOnlySpan<(object key, Color color)> dataSet, IReadOnlyDictionary<LedId, int> ledIdToIndex,
+        ushort transitionTime = 0)
     {
         int headerLength = version == ExtControlVersion.v1 ? 1 : 2;
         int entryLength = version == ExtControlVersion.v1 ? 7 : 8;
@@ -231,7 +240,7 @@ internal sealed class NanoleafDeviceUpdateQueue : UpdateQueue
             if (offset + entryLength > buffer.Length)
                 break;
 
-            WriteEntry(buffer.Slice(offset, entryLength), version, panelId, color);
+            WriteEntry(buffer.Slice(offset, entryLength), version, panelId, color, transitionTime);
             count++;
         }
 
@@ -242,7 +251,8 @@ internal sealed class NanoleafDeviceUpdateQueue : UpdateQueue
         return headerLength + count * entryLength;
     }
 
-    private static void WriteEntry(Span<byte> entry, ExtControlVersion version, int panelId, Color color)
+    private static void WriteEntry(Span<byte> entry, ExtControlVersion version, int panelId, Color color,
+        ushort transitionTime)
     {
         if (version == ExtControlVersion.v1)
         {
@@ -252,7 +262,7 @@ internal sealed class NanoleafDeviceUpdateQueue : UpdateQueue
             entry[3] = color.GetG();
             entry[4] = color.GetB();
             entry[5] = 0; // White LED element, currently ignored
-            entry[6] = 0; // transitionTime
+            entry[6] = (byte)Math.Min(transitionTime, byte.MaxValue); // transitionTime
         }
         else
         {
@@ -262,8 +272,8 @@ internal sealed class NanoleafDeviceUpdateQueue : UpdateQueue
             entry[3] = color.GetG();
             entry[4] = color.GetB();
             entry[5] = 0; // White LED element, currently ignored
-            entry[6] = 0; // transitionTime high byte
-            entry[7] = 0; // transitionTime low byte
+            entry[6] = (byte)(transitionTime >> 8); // transitionTime high byte
+            entry[7] = (byte)(transitionTime & 0xFF); // transitionTime low byte
         }
     }
 

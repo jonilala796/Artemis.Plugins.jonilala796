@@ -150,4 +150,44 @@ public class NanoleafDeviceUpdateQueueTests
         Assert.Equal(new byte[] { 0x0A, 0x0B }, frame[2..4]);
         Assert.Equal(new byte[] { 0x0C, 0x0D }, frame[10..12]);
     }
+    [Fact]
+    public void TransitionTime_V2_IsWrittenHighByteFirst()
+    {
+        var mapping = new Dictionary<LedId, int> { [LedId.Custom1] = 1 };
+        byte[] frame = new byte[NanoleafDeviceUpdateQueue.GetPacketLength(ExtControlVersion.v2, 1)];
+        byte[] partial = new byte[frame.Length];
+        (object key, Color color)[] data = [(LedId.Custom1, new Color(255, 1, 2, 3))];
+
+        NanoleafDeviceUpdateQueue.WriteEntries(frame, ExtControlVersion.v2, data, mapping, 0x0102);
+        NanoleafDeviceUpdateQueue.WritePartialPacket(partial, ExtControlVersion.v2, data, mapping, 0x0102);
+
+        Assert.Equal(new byte[] { 0x01, 0x02 }, frame[8..10]);
+        Assert.Equal(new byte[] { 0x01, 0x02 }, partial[8..10]);
+    }
+
+    [Fact]
+    public void TransitionTime_V1_IsSingleByte()
+    {
+        var mapping = new Dictionary<LedId, int> { [LedId.Custom1] = 1 };
+        byte[] frame = new byte[NanoleafDeviceUpdateQueue.GetPacketLength(ExtControlVersion.v1, 1)];
+        byte[] partial = new byte[frame.Length];
+        (object key, Color color)[] data = [(LedId.Custom1, new Color(255, 1, 2, 3))];
+
+        NanoleafDeviceUpdateQueue.WriteEntries(frame, ExtControlVersion.v1, data, mapping, 3);
+        NanoleafDeviceUpdateQueue.WritePartialPacket(partial, ExtControlVersion.v1, data, mapping, 3);
+
+        Assert.Equal(3, frame[7]);
+        Assert.Equal(3, partial[7]);
+    }
+
+    [Fact]
+    public void InitializeFrame_UsesTransitionTime()
+    {
+        var mapping = new Dictionary<LedId, int> { [LedId.Custom1] = 1 };
+        byte[] frame = new byte[NanoleafDeviceUpdateQueue.GetPacketLength(ExtControlVersion.v2, 1)];
+
+        NanoleafDeviceUpdateQueue.InitializeFrame(frame, ExtControlVersion.v2, mapping, 1);
+
+        Assert.Equal(new byte[] { 0x00, 0x01 }, frame[8..10]);
+    }
 }

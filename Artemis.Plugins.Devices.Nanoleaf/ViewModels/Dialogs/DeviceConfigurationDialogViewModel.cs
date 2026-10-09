@@ -48,6 +48,28 @@ public class
         set => RaiseAndSetIfChanged(ref _brightness, value);
     }
 
+    private byte _transitionTime;
+
+    /// <summary>
+    /// Fade time between colors in steps of 100 ms.
+    /// </summary>
+    public byte TransitionTime
+    {
+        get => _transitionTime;
+        set => RaiseAndSetIfChanged(ref _transitionTime, value);
+    }
+
+    private int _maxUpdateRate;
+
+    /// <summary>
+    /// Maximum number of updates per second. 0 means unlimited.
+    /// </summary>
+    public int MaxUpdateRate
+    {
+        get => _maxUpdateRate;
+        set => RaiseAndSetIfChanged(ref _maxUpdateRate, value);
+    }
+
     public ReactiveCommand<Unit, Unit> Save { get; }
     public ReactiveCommand<Unit, Unit> Cancel { get; }
     public ReactiveCommand<Unit, Unit> RemoveDevice { get; }
@@ -63,6 +85,8 @@ public class
         _authToken = device.AuthToken;
         // 0 is the default of devices added before brightness could be configured and means full brightness
         _brightness = device.Brightness > 0 ? device.Brightness : (byte)100;
+        _transitionTime = device.TransitionTime;
+        _maxUpdateRate = device.MaxUpdateRate;
 
         this.ValidationRule(vm => vm.Hostname, IsValidHostname, "A valid IP address or hostname is required");
 
@@ -74,7 +98,9 @@ public class
     private bool HasChanges => Hostname != _device.Hostname ||
                                Model != _device.Model ||
                                AuthToken != _device.AuthToken ||
-                               Brightness != (_device.Brightness > 0 ? _device.Brightness : 100);
+                               Brightness != (_device.Brightness > 0 ? _device.Brightness : 100) ||
+                               TransitionTime != _device.TransitionTime ||
+                               MaxUpdateRate != _device.MaxUpdateRate;
 
     private static bool IsValidHostname(string? hostname) =>
         !string.IsNullOrWhiteSpace(hostname) && Uri.CheckHostName(hostname.Trim()) != UriHostNameType.Unknown;
@@ -88,6 +114,8 @@ public class
         _device.Model = Model;
         _device.AuthToken = AuthToken.Trim();
         _device.Brightness = Brightness;
+        _device.TransitionTime = TransitionTime;
+        _device.MaxUpdateRate = MaxUpdateRate;
 
         Close(DeviceDialogResult.Save);
     }
